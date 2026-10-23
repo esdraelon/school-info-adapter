@@ -13,7 +13,16 @@ hub's self-link is dropped. Run accounting mirrors the other drivers:
 fetch failure -> FAILURE (returned, never raised); a fetched page
 yielding zero links -> PARTIAL (the real hub always has links, so
 zero means markup drift, not an empty source).
+
+The tutorial deck's week windowing is reference-relative, and its
+dates are school-local: the reference date handed to the parser is
+the scrape instant read in the configured school timezone
+(``SCHOOL_TIMEZONE`` via the composition root), NOT its UTC date —
+an evening scrape must not window out the current week a day early
+(M7.1, mirroring the HAC driver's M7 fix).
 """
+
+from zoneinfo import ZoneInfo
 
 from school.domain import (
     ResourceKind,
@@ -27,13 +36,26 @@ from school.driver_web.hub import HubLink, extract_hub_links, fallback_title
 from school.driver_web.tutorials import parse_tutorials
 from school.spi import ScrapeContext, ScrapeResult
 
+#: The school's timezone when none is configured: tutorial dates are
+#: Leander ISD local dates (mirrors the HAC driver's default).
+DEFAULT_TIMEZONE_NAME = "America/Chicago"
+
 
 class TeamSiteDriver:
     """SourceDriver strategy over the team-site hub page."""
 
-    def __init__(self, *, hub_url: str, fetcher: Fetcher) -> None:
+    def __init__(
+        self,
+        *,
+        hub_url: str,
+        fetcher: Fetcher,
+        timezone_name: str = DEFAULT_TIMEZONE_NAME,
+    ) -> None:
         self._hub_url = hub_url
         self._fetcher = fetcher
+        # Resolved eagerly: an unknown timezone name fails at wiring
+        # time (ZoneInfoNotFoundError), never mid-scrape.
+        self._timezone = ZoneInfo(timezone_name)
 
     @property
     def kind(self) -> SourceKind:
@@ -109,7 +131,7 @@ class TeamSiteDriver:
             page,
             deck_url=embed_url,
             scraped_at=context.now,
-            reference=context.now.date(),
+            reference=context.now.astimezone(self._timezone).date(),
         )
         return list(sessions), list(notes)
 

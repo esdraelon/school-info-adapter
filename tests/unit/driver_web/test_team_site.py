@@ -1,6 +1,7 @@
 """TeamSiteDriver: hub fetch -> resources, with run accounting."""
 
 from collections import Counter
+from datetime import datetime, timezone
 
 from school.domain import ResourceKind, RunOutcome, SourceKind
 from school.driver_web import TeamSiteDriver
@@ -110,3 +111,26 @@ def test_driver_runs_through_the_registry() -> None:
     resolved = registry.driver_for(SourceKind.TEAM_SITE).unwrap()
     assert isinstance(resolved, TeamSiteDriver)
     assert resolved.scrape(_context()).run.outcome is RunOutcome.SUCCESS
+
+
+def test_tutorial_window_uses_the_school_timezone() -> None:
+    """M7.1 FIX B: 2026-10-27T01:30Z is 20:30 CDT on 10/26. The
+    tutorial deck's newest week starts Monday 10/19 — exactly 7 days
+    before the school reference date (10/26), so its sessions are in
+    window; against the UTC date (10/27) that week is already
+    history and its sessions vanish."""
+    instant = datetime(2026, 10, 27, 1, 30, tzinfo=timezone.utc)
+    context = ScrapeContext(student=SAM, now=instant)
+    local = _driver(_full_pages()).scrape(context)
+    local_titles = {r.title for r in local.resources}
+    assert (
+        "ELA tutorials \u2014 Monday 10/19: Goodie PM (4:20-4:50)"
+        in local_titles
+    )
+    utc_driver = TeamSiteDriver(
+        hub_url=HUB_URL,
+        fetcher=make_fetcher(_full_pages()),
+        timezone_name="UTC",
+    )
+    utc_titles = {r.title for r in utc_driver.scrape(context).resources}
+    assert not any("tutorials \u2014" in title for title in utc_titles)

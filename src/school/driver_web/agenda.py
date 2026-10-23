@@ -20,9 +20,17 @@ or not at all, and the failure note names the exception class.
 Resources are deduped across the run by (url, title, course): decks
 repeat the same workbook/notes links week after week, and one scrape
 should report each distinct resource once.
+
+Dates in the decks are school-local, so the reference date handed to
+the parsers is the scrape instant read in the configured school
+timezone (``SCHOOL_TIMEZONE`` via the composition root), NOT its UTC
+date — an evening scrape must not resolve the decks' dates against
+tomorrow (M7.1, mirroring the HAC driver's M7 fix). The parsers
+themselves take plain dates and are timezone-agnostic.
 """
 
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 from school.domain import (
     CourseRef,
@@ -42,6 +50,10 @@ from school.spi import ScrapeContext, ScrapeResult
 
 WEEKLY_GRID_TEMPLATE = "weekly-grid-v1"
 TEAM_TABLE_TEMPLATE = "team-table-v1"
+
+#: The school's timezone when none is configured: deck dates are
+#: Leander ISD local dates (mirrors the HAC driver's default).
+DEFAULT_TIMEZONE_NAME = "America/Chicago"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,10 +84,14 @@ class AgendaDriver:
         fetcher: Fetcher,
         decks: tuple[DeckConfig, ...],
         parsers: DeckParserRegistry,
+        timezone_name: str = DEFAULT_TIMEZONE_NAME,
     ) -> None:
         self._fetcher = fetcher
         self._decks = decks
         self._parsers = parsers
+        # Resolved eagerly: an unknown timezone name fails at wiring
+        # time (ZoneInfoNotFoundError), never mid-scrape.
+        self._timezone = ZoneInfo(timezone_name)
 
     @property
     def kind(self) -> SourceKind:
@@ -163,7 +179,9 @@ class AgendaDriver:
                     source_kind=SourceKind.AGENDA,
                     source_url=deck.url,
                     scraped_at=context.now,
-                    reference=context.now.date(),
+                    reference=context.now.astimezone(
+                        self._timezone
+                    ).date(),
                 )
                 notes.extend(records.notes)
                 if records.week_monday is None:

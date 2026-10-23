@@ -1,5 +1,10 @@
 """AgendaDriver: per-deck run accounting + registry-driven parsing."""
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfoNotFoundError
+
+import pytest
+
 from school.domain import DriverKind, RunOutcome, SourceKind
 from school.driver_web import (
     AgendaDriver,
@@ -219,3 +224,64 @@ def test_driver_runs_through_the_registry() -> None:
     resolved = registry.driver_for(SourceKind.AGENDA).unwrap()
     assert isinstance(resolved, AgendaDriver)
     assert resolved.scrape(_context()).run.outcome is RunOutcome.SUCCESS
+
+
+# A one-week synthetic deck whose Monday cell carries an "FD 1/1"
+# item: 1/1 sits almost exactly at its year midpoint in early July,
+# so which 1/1 the parser infers turns on the reference DATE — the
+# day-boundary probe for the timezone tests below.
+_BOUNDARY_SLIDE = (
+    "<svg>"
+    '<g role="img" aria-label="Monday 6/29">'
+    '<path d="m 40 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Tuesday 6/30">'
+    '<path d="m 240 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Wednesday 7/1">'
+    '<path d="m 440 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Thursday 7/2">'
+    '<path d="m 640 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Friday 7/3">'
+    '<path d="m 840 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Year Midpoint Quiz&#xa;FD 1/1">'
+    '<path d="m 40 100l0 30l 120 0l0 -30z"/></g>'
+    "</svg>"
+)
+
+# 2026-07-03T01:30Z is 20:30 CDT on 7/2 — the evening boundary.
+_EVENING = datetime(2026, 7, 3, 1, 30, tzinfo=timezone.utc)
+
+
+def _boundary_driver(
+    timezone_name: str = "America/Chicago",
+) -> AgendaDriver:
+    return AgendaDriver(
+        fetcher=make_fetcher({MATH_DECK_URL: make_page(_BOUNDARY_SLIDE)}),
+        decks=(MATH,),
+        parsers=default_parser_registry(),
+        timezone_name=timezone_name,
+    )
+
+
+def test_reference_date_uses_the_school_timezone() -> None:
+    """M7.1 FIX B: against the school reference date (7/2) the FD
+    1/1 cell infers 2026-01-01 (182 days back beats 183 forward);
+    a UTC reference date (7/3) would flip it to 2027-01-01."""
+    driver = _boundary_driver()
+    result = driver.scrape(ScrapeContext(student=SAM, now=_EVENING))
+    (quiz,) = result.drivers
+    assert quiz.title == "Year Midpoint Quiz"
+    assert quiz.due_at == datetime(2026, 1, 1)
+
+
+def test_explicit_utc_timezone_keeps_the_utc_reference_date() -> None:
+    """The instant is explicit: with timezone_name="UTC" the same
+    evening scrape derives against 7/3 and the FD flips a year."""
+    driver = _boundary_driver(timezone_name="UTC")
+    result = driver.scrape(ScrapeContext(student=SAM, now=_EVENING))
+    (quiz,) = result.drivers
+    assert quiz.due_at == datetime(2027, 1, 1)
+
+
+def test_unknown_timezone_fails_at_construction() -> None:
+    with pytest.raises(ZoneInfoNotFoundError):
+        _boundary_driver(timezone_name="Mars/Olympus_Mons")

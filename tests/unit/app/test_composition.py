@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from driver_web.conftest import make_page
+
 from school.app.composition import build_app, load_deck_configs
 from school.app.config import AppConfig, ConfigError
 from school.domain import (
@@ -211,6 +213,55 @@ def test_build_app_threads_the_stale_budget_into_the_hac_driver(
     assert downgraded.message is not None
     assert "cache stale" in downgraded.message
     assert "cache_age=2h" in downgraded.message
+
+
+# The Fix B boundary deck (mirrors tests/unit/driver_web's): one
+# week whose Monday cell carries an "FD 1/1" item — the inferred
+# year turns on the reference date at the July midpoint.
+_BOUNDARY_SLIDE = (
+    "<svg>"
+    '<g role="img" aria-label="Monday 6/29">'
+    '<path d="m 40 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Tuesday 6/30">'
+    '<path d="m 240 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Wednesday 7/1">'
+    '<path d="m 440 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Thursday 7/2">'
+    '<path d="m 640 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Friday 7/3">'
+    '<path d="m 840 40l0 20l 120 0l0 -20z"/></g>'
+    '<g role="img" aria-label="Year Midpoint Quiz&#xa;FD 1/1">'
+    '<path d="m 40 100l0 30l 120 0l0 -30z"/></g>'
+    "</svg>"
+)
+
+
+def test_build_app_threads_the_configured_timezone_into_the_agenda_driver(
+    app_config: AppConfig,
+) -> None:
+    """M7.1 FIX B, wired end to end: at the evening instant
+    2026-07-03T01:30Z (20:30 CDT on 7/2), the boundary deck's FD 1/1
+    cell resolves against the school date under the default config
+    (due 2026-01-01) and against the UTC date with
+    SCHOOL_TIMEZONE=UTC (due 2027-01-01)."""
+    page = make_page(_BOUNDARY_SLIDE)
+    instant = datetime(2026, 7, 3, 1, 30, tzinfo=timezone.utc)
+
+    def quiz_due(config: AppConfig) -> datetime | None:
+        app = build_app(
+            config, fetcher=lambda url: page, clock=lambda: FIXED
+        )
+        driver = app.registry.driver_for(SourceKind.AGENDA).unwrap()
+        result = driver.scrape(
+            ScrapeContext(student=app.student, now=instant)
+        )
+        (record,) = result.drivers
+        return record.due_at
+
+    assert quiz_due(app_config) == datetime(2026, 1, 1)
+    assert quiz_due(replace(app_config, timezone_name="UTC")) == datetime(
+        2027, 1, 1
+    )
 
 
 def test_build_app_names_a_missing_deck_registry(

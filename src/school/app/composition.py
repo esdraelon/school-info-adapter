@@ -207,12 +207,15 @@ def build_app(
             stale_after=timedelta(hours=config.stale_hac_hours),
         ),
         SourceKind.TEAM_SITE: TeamSiteDriver(
-            hub_url=config.team_site_url, fetcher=fetch
+            hub_url=config.team_site_url,
+            fetcher=fetch,
+            timezone_name=config.timezone_name,
         ),
         SourceKind.AGENDA: AgendaDriver(
             fetcher=fetch,
             decks=decks,
             parsers=default_parser_registry(),
+            timezone_name=config.timezone_name,
         ),
     }
     if config.classroom_configured:
