@@ -14,9 +14,15 @@ requires-python = ">=3.11"
 # Runtime dependencies: the official MCP Python SDK (FastMCP) for the
 # M4 server, and uvicorn to serve its ASGI app (imported directly by
 # school.mcp_server.server, so declared rather than left transitive).
+# M6 adds playwright (Classroom browser driver; imports stay local to
+# school.driver_classroom_web so the browser binaries are only needed
+# where a session actually starts) and cryptography (the vault's
+# AES-256-GCM envelope encryption).
 dependencies = [
     "mcp>=1.16,<2",
     "uvicorn>=0.30",
+    "playwright>=1.40",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

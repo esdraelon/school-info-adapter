@@ -1,4 +1,14 @@
-"""Encrypted credential store (age-encrypted file, service-user-only perms) and browser-profile lifecycle.
+"""Encrypted credential store and browser-profile lifecycle support.
 
-Patterns: encrypted-at-rest Adapter; frozen config dataclass.
+Patterns: encrypted-at-rest Adapter (AES-256-GCM vault over two files);
+``VaultCredentials`` adapts raw entries to the (username, password)
+shape the Classroom re-auth helper consumes.
 """
+
+from school.vault.vault import Vault, VaultCredentials, VaultError
+
+__all__ = [
+    "Vault",
+    "VaultCredentials",
+    "VaultError",
+]
