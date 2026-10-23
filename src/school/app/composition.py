@@ -20,7 +20,7 @@ import sqlite3
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from starlette.types import ASGIApp
@@ -204,6 +204,7 @@ def build_app(
                 student=student,
             ),
             timezone_name=config.timezone_name,
+            stale_after=timedelta(hours=config.stale_hac_hours),
         ),
         SourceKind.TEAM_SITE: TeamSiteDriver(
             hub_url=config.team_site_url, fetcher=fetch

@@ -1,6 +1,7 @@
 """HacDriver: the SourceDriver strategy's outcomes and staleness surface."""
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfoNotFoundError
@@ -40,7 +41,9 @@ def test_scrape_success(tmp_path: Path) -> None:
     assert run.outcome is RunOutcome.SUCCESS
     assert run.source_kind is SourceKind.HAC
     assert run.found == 7
-    assert run.message is None
+    # M7.1: every run message carries the cache-age fact (the
+    # fixture's age at NOW is 23h47m -> 23 whole hours).
+    assert run.message == "cache_age=23h"
     # Started on the caller's clock, finished on the injected clock.
     assert run.started_at == NOW
     assert run.finished_at == FINISH
@@ -113,6 +116,73 @@ def test_cache_age_against_context_clock(tmp_path: Path) -> None:
 def test_cache_age_unknown_when_file_missing(tmp_path: Path) -> None:
     driver = make_driver(tmp_path / "does-not-exist.json")
     assert driver.cache_age(_context()) is None
+
+
+def _restamp(path: Path, when: datetime) -> None:
+    """Re-pin a staged cache's mtime (see conftest.stage_cache)."""
+    stamp = when.timestamp()
+    os.utime(path, (stamp, stamp))
+
+
+def test_stale_cache_downgrades_an_otherwise_successful_run(
+    tmp_path: Path,
+) -> None:
+    """M7.1 FIX A: the upstream grades scraper is dead but the cache
+    file still reads fine. The run must not report SUCCESS against
+    31h-old data: it downgrades to PARTIAL, names the staleness, and
+    the records still flow."""
+    path = stage_cache(tmp_path, "cache_full.json")
+    _restamp(path, NOW - timedelta(hours=31))
+    result = make_driver(path).scrape(_context())
+    assert result.run.outcome is RunOutcome.PARTIAL
+    assert result.run.found == 7
+    assert len(result.drivers) == 7
+    message = result.run.message
+    assert message is not None
+    assert "cache stale" in message
+    assert "cache_age=31h" in message
+
+
+def test_stale_cache_leaves_a_partial_runs_outcome_alone(
+    tmp_path: Path,
+) -> None:
+    """An already-PARTIAL run keeps its outcome and its own
+    explanation; only the age fact is appended."""
+    path = stage_cache(tmp_path, "cache_partial.json")
+    _restamp(path, NOW - timedelta(hours=31))
+    result = make_driver(path).scrape(_context())
+    assert result.run.outcome is RunOutcome.PARTIAL
+    message = result.run.message
+    assert message is not None
+    assert "3 of 4" in message
+    assert "cache stale" not in message
+    assert "cache_age=31h" in message
+
+
+def test_missing_cache_reports_unknown_age(tmp_path: Path) -> None:
+    result = make_driver(tmp_path / "does-not-exist.json").scrape(
+        _context()
+    )
+    assert result.run.outcome is RunOutcome.FAILURE
+    assert result.run.message is not None
+    assert "cache_age=unknown" in result.run.message
+
+
+def test_stale_after_budget_is_injected(tmp_path: Path) -> None:
+    """The standard fixture's age at NOW is 23h47m: inside the
+    default 30h budget the scrape succeeds; under a tighter injected
+    budget the same cache downgrades."""
+    path = stage_cache(tmp_path, "cache_full.json")
+    default = make_driver(path).scrape(_context())
+    assert default.run.outcome is RunOutcome.SUCCESS
+    tight = HacDriver(
+        make_adapter(path), stale_after=timedelta(hours=1)
+    )
+    result = tight.scrape(_context())
+    assert result.run.outcome is RunOutcome.PARTIAL
+    assert result.run.message is not None
+    assert "cache stale" in result.run.message
+    assert "cache_age=23h" in result.run.message
 
 
 def _evening_cache(tmp_path: Path) -> Path:

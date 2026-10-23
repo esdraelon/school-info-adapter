@@ -7,18 +7,26 @@ only build-time write).
 """
 
 import json
+import os
 import shutil
 import sqlite3
 from contextlib import closing
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from school.app.composition import build_app, load_deck_configs
 from school.app.config import AppConfig, ConfigError
-from school.domain import Found, ItemStatus, SourceKind, StudentRef
+from school.domain import (
+    Found,
+    ItemStatus,
+    RunOutcome,
+    SourceKind,
+    SourceRun,
+    StudentRef,
+)
 from school.spi import ScrapeContext
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -175,6 +183,34 @@ def test_build_app_threads_the_configured_timezone_into_the_hac_driver(
         quiz_status(replace(app_config, timezone_name="UTC"))
         is ItemStatus.MISSING
     )
+
+
+def test_build_app_threads_the_stale_budget_into_the_hac_driver(
+    app_config: AppConfig,
+) -> None:
+    """M7.1 FIX A, wired end to end: SCHOOL_STALE_HAC_HOURS reaches
+    HacDriver as stale_after. The cache is stamped 2h before the
+    scrape instant — inside the default 30h budget the run succeeds;
+    with a 1h budget the same scrape downgrades to PARTIAL with the
+    staleness named and the age fact attached."""
+    cache = Path(app_config.hac_cache_path)
+    stamp = (FIXED - timedelta(hours=2)).timestamp()
+    os.utime(cache, (stamp, stamp))
+
+    def scrape_run(config: AppConfig) -> SourceRun:
+        app = build_app(config, fetcher=never_fetch, clock=lambda: FIXED)
+        driver = app.registry.driver_for(SourceKind.HAC).unwrap()
+        return driver.scrape(
+            ScrapeContext(student=app.student, now=FIXED)
+        ).run
+
+    fresh = scrape_run(app_config)
+    assert fresh.outcome is RunOutcome.SUCCESS
+    downgraded = scrape_run(replace(app_config, stale_hac_hours=1.0))
+    assert downgraded.outcome is RunOutcome.PARTIAL
+    assert downgraded.message is not None
+    assert "cache stale" in downgraded.message
+    assert "cache_age=2h" in downgraded.message
 
 
 def test_build_app_names_a_missing_deck_registry(

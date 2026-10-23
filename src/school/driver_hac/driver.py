@@ -14,6 +14,14 @@ into a ScrapeResult with the right run outcome:
 Staleness (C10) surfaces two ways: every record carries the cache
 file's mtime as its scraped_at, and ``cache_age`` exposes that mtime
 against the caller's clock for health checks without a full scrape.
+Every run's message also carries the cache's age as a greppable fact
+(``cache_age=<hours>h``, or ``cache_age=unknown`` when the file
+cannot be stat'ed), measured against the scrape context's clock.
+When the age exceeds the injected ``stale_after`` budget and the run
+would otherwise be SUCCESS, the outcome downgrades to PARTIAL with a
+``cache stale`` note: a dead upstream grades scraper must not leave
+this driver reporting clean successes against a rotting cache while
+the scrape timer keeps running (M7.1).
 
 Status derivation is due-relative, and HAC due dates are school-local
 (America/Chicago by default): the mapping layer's reference date is
@@ -36,6 +44,11 @@ from school.spi import ScrapeContext, ScrapeResult, pipe
 #: Leander ISD local dates.
 DEFAULT_TIMEZONE_NAME = "America/Chicago"
 
+#: Default cache-age budget before a scrape downgrades: matches the
+#: SCHOOL_STALE_HAC_HOURS default the composition root wires in
+#: production (M7.1).
+DEFAULT_STALE_AFTER = timedelta(hours=30)
+
 
 @dataclass(frozen=True, kw_only=True)
 class _ScrapeState:
@@ -54,11 +67,13 @@ class HacDriver:
         adapter: HacCacheAdapter,
         *,
         timezone_name: str = DEFAULT_TIMEZONE_NAME,
+        stale_after: timedelta = DEFAULT_STALE_AFTER,
     ) -> None:
         self._adapter = adapter
         # Resolved eagerly: an unknown timezone name fails at wiring
         # time (ZoneInfoNotFoundError), never mid-scrape.
         self._timezone = ZoneInfo(timezone_name)
+        self._stale_after = stale_after
 
     @property
     def kind(self) -> SourceKind:
@@ -143,6 +158,36 @@ class HacDriver:
             records=snapshot.records,
         )
 
+    def _with_staleness(
+        self,
+        context: ScrapeContext,
+        outcome: RunOutcome,
+        message: str | None,
+    ) -> tuple[RunOutcome, str]:
+        """Fold the cache-age fact (and any staleness downgrade) into
+        a run's outcome/message — the last step of every _result, so
+        every scrape reports the fact, successes included.
+
+        The fact is always present (``cache_age=unknown`` when the
+        file cannot be stat'ed). A cache older than ``stale_after``
+        downgrades an otherwise-SUCCESS run to PARTIAL with a
+        ``cache stale`` note; worse outcomes are left as they are —
+        they already carry their own explanation.
+        """
+        age = self.cache_age(context)
+        if age is None:
+            fact = "cache_age=unknown"
+            stale = False
+        else:
+            fact = f"cache_age={int(age.total_seconds() // 3600)}h"
+            stale = age > self._stale_after
+        notes = [message] if message else []
+        if stale and outcome is RunOutcome.SUCCESS:
+            outcome = RunOutcome.PARTIAL
+            notes.append("cache stale")
+        notes.append(fact)
+        return outcome, "; ".join(notes)
+
     def _result(
         self,
         context: ScrapeContext,
@@ -152,6 +197,7 @@ class HacDriver:
         message: str | None = None,
         records: tuple[DriverRecord, ...] = (),
     ) -> ScrapeResult:
+        outcome, message = self._with_staleness(context, outcome, message)
         run = SourceRun(
             source_kind=SourceKind.HAC,
             started_at=context.now,
