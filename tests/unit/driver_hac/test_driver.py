@@ -34,12 +34,12 @@ def test_scrape_success(tmp_path: Path) -> None:
     run = result.run
     assert run.outcome is RunOutcome.SUCCESS
     assert run.source_kind is SourceKind.HAC
-    assert run.found == 6
+    assert run.found == 7
     assert run.message is None
     # Started on the caller's clock, finished on the injected clock.
     assert run.started_at == NOW
     assert run.finished_at == FINISH
-    assert len(result.drivers) == 6
+    assert len(result.drivers) == 7
     assert result.resources == []
     assert {record.scraped_at for record in result.drivers} == {CACHE_MTIME}
     assert {record.source_kind for record in result.drivers} == {SourceKind.HAC}
@@ -76,18 +76,16 @@ def test_scrape_corrupt_json_is_failure(tmp_path: Path) -> None:
     assert "not valid JSON" in result.run.message
 
 
-def test_scrape_student_absent_is_success_with_zero_found(
+def test_scrape_cache_without_courses_is_success_with_zero_found(
     tmp_path: Path,
 ) -> None:
-    driver = make_driver(
-        stage_cache(tmp_path, "cache_full.json"), student=AIDEN
-    )
-    result = driver.scrape(_context(student=AIDEN))
+    driver = make_driver(stage_cache(tmp_path, "cache_empty.json"))
+    result = driver.scrape(_context())
     assert result.run.outcome is RunOutcome.SUCCESS
     assert result.run.found == 0
     assert result.drivers == []
     assert result.run.message is not None
-    assert "'aiden' not in cache" in result.run.message
+    assert "no 'courses' list" in result.run.message
 
 
 def test_scrape_for_the_wrong_student_fails_loudly(tmp_path: Path) -> None:
@@ -119,4 +117,4 @@ def test_driver_runs_through_the_registry(tmp_path: Path) -> None:
     assert isinstance(resolved, HacDriver)
     result = resolved.scrape(_context())
     assert result.run.outcome is RunOutcome.SUCCESS
-    assert result.run.found == 6
+    assert result.run.found == 7

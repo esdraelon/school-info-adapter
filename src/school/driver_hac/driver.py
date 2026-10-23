@@ -8,7 +8,7 @@ into a ScrapeResult with the right run outcome:
 
 - cache unreadable / invalid -> FAILURE (returned, never raised)
 - cache read, some items un-mappable -> PARTIAL (good items still flow)
-- student absent from a well-formed cache -> SUCCESS with found=0
+- cache payload with no courses list -> SUCCESS with found=0
 - otherwise -> SUCCESS
 
 Staleness (C10) surfaces two ways: every record carries the cache
@@ -67,9 +67,16 @@ class HacDriver:
         return context.now - timestamp
 
     def _load(self, state: _ScrapeState) -> _ScrapeState:
-        """Pipeline stage: read+map the cache, capturing any failure."""
+        """Pipeline stage: read+map the cache, capturing any failure.
+
+        The context's calendar date is the mapping layer's reference
+        date for due-relative status derivation (HAC's only missing
+        signal) — the caller's clock, never a wall-clock read.
+        """
         try:
-            snapshot = self._adapter.load()
+            snapshot = self._adapter.load(
+                reference_date=state.context.now.date()
+            )
         except CacheLoadError as exc:
             return replace(state, error=str(exc))
         return replace(state, snapshot=snapshot)

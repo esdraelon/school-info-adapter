@@ -2,32 +2,57 @@
 
 Pattern: pure mapping functions (the field-mapping layer of the Adapter).
 This module is the ONLY place in the driver that touches raw cache dicts:
-if the real cache's field names differ from the assumptions below, this
-file changes and nothing else does. Everything here is a pure function —
-no I/O, no clock, no file access — so the whole layer is table-testable.
+if the real cache's shape drifts, this file changes and nothing else
+does. Everything here is a pure function — no I/O, no wall clock — so
+the whole layer is table-testable; the reference date for status
+derivation is injected by the caller (the driver's ScrapeContext.now).
 
-Cache schema assumptions (encoded here and in the test fixtures; to be
-reconciled against the real cache before deploy):
+Real cache schema (verified 2026-10-22 against
+``/var/www/haliffer/grades-cache/cache/sam_classwork_cache.json`` on
+hal9k — one file per student, written by the grades MCP scraper)::
 
-- Top level is one of: an object keyed by student id; an object with a
-  ``students`` object keyed by student id; or a bare list of items (each
-  item may carry a ``student``/``student_id`` marker).
-- A student node is a list of items, or an object whose items live under
-  ``classwork`` (fallbacks: ``assignments``, ``items``).
-- Item fields, first present wins: course <- course|class|course_name;
-  title <- title|assignment|name; due <- due_date|due|due_at;
-  score <- score|grade|score_text; kind <- kind|category|type;
-  id -> source_ref.
-- Due values are ISO dates/datetimes or ``MM/DD/YYYY``; naive values are
-  read as UTC.
-- Status mapping is deliberately conservative (HAC lags reality): a score
-  means GRADED, an explicit missing flag/status means MISSING, everything
-  else is ASSIGNED. The cache carries no turned-in signal, so DONE is
-  never produced here.
+    {
+      "student_id": null,
+      "courses": [
+        {"name": "1801 - 1    Language Arts 8", "average": 91.2,
+         "assignments": [
+           {"name": "...", "category": "Summative (Product)",
+            "date_assigned": "09/29/2026", "date_due": "10/02/2026",
+            "max_points": 100.0, "score": 80.0, "notes": ""}
+         ]}
+      ]
+    }
+
+- ``student_id`` in the file is null and stays ignored: the adapter's
+  configured student (and the per-student cache file) is the authority.
+- Course names carry a ``"<code> - <period>    <display name>"`` prefix;
+  the period digit canonicalizes to "P<digit>". A name without the
+  prefix pattern is kept whole (whitespace-collapsed), period None.
+- Items carry no course field and no id: the course comes from the
+  enclosing course node, and ``source_ref`` stays None (the merge
+  layer's dedup key carries identity).
+- ``max_points``, ``average``, ``date_assigned``, and ``notes`` are not
+  modeled; missing optional item keys degrade to None, never a crash.
+
+Status derivation (derived-from-HAC-convention): the real cache has NO
+missing flag and no turned-in signal anywhere. The only "missing"
+signal it carries is an unscored item whose due date has passed, so:
+a present ``score`` means GRADED (a 0.0 score included — an earned
+zero and a missing-zero are indistinguishable in the cache, and we do
+not invent a flag); ``score`` null with due date before the reference
+date means MISSING; anything else is ASSIGNED. DONE is never produced
+here. This rule deliberately understates: HAC lags reality, and the
+merge layer outranks HAC with Classroom data when both know an item.
+
+Kind mapping: ``category`` is teacher free-text, so kinds resolve by a
+substring heuristic table (first match wins): quiz -> QUIZ;
+test/assessment/summative -> TEST; project -> PROJECT; practice ->
+PRACTICE; anything else (or absent) -> ASSIGNMENT.
 """
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from typing import Any
 
@@ -43,31 +68,24 @@ from school.domain import (
     StudentRef,
 )
 
-_COURSE_KEYS = ("course", "class", "course_name")
-_TITLE_KEYS = ("title", "assignment", "name")
-_DUE_KEYS = ("due_date", "due", "due_at")
-_SCORE_KEYS = ("score", "grade", "score_text")
-_KIND_KEYS = ("kind", "category", "type")
-_ITEM_LIST_KEYS = ("classwork", "assignments", "items")
-_STUDENT_MARKER_KEYS = ("student", "student_id")
-
-# A trailing period marker: "Math 8 P4", "Social Studies Period 4",
-# "Wind Ensemble (P4)", "Math 8 - P4". The marker must start at a token
-# boundary (whitespace, comma, dash, or open paren) so a course like
-# "AP 4" is not misread.
-_PERIOD_SUFFIX = re.compile(
-    r"^(?P<name>.+?)(?:[\s,]+|[-–—]\s*|\(\s*)(?:period|p)\s*(?P<num>\d+)\s*\)?\s*$",
-    re.IGNORECASE,
+# The real course-name prefix: "1801 - 1    Language Arts 8",
+# "4801ADV - 4    Social Studies 8 Advanced". The code is a single
+# token, the period a single digit; whitespace runs separate the parts.
+_COURSE_PREFIX = re.compile(
+    r"^(?P<code>\S+) - (?P<period>\d)\s+(?P<name>.+)$",
 )
 
-
-def _first_value(raw: Mapping[str, Any], keys: tuple[str, ...]) -> object | None:
-    """The first non-None value among ``keys`` (schema-detection helper)."""
-    for key in keys:
-        value: object = raw.get(key)
-        if value is not None:
-            return value
-    return None
+# Kind heuristic table over the free-text category (see module
+# docstring): first substring match wins, so order is significant —
+# "Tests-Projects" is a TEST, "Daily Work-Quizzes" a QUIZ.
+_KIND_RULES: tuple[tuple[str, DriverKind], ...] = (
+    ("quiz", DriverKind.QUIZ),
+    ("test", DriverKind.TEST),
+    ("assessment", DriverKind.TEST),
+    ("summative", DriverKind.TEST),
+    ("project", DriverKind.PROJECT),
+    ("practice", DriverKind.PRACTICE),
+)
 
 
 def _as_text(value: object | None) -> str | None:
@@ -80,31 +98,33 @@ def _as_text(value: object | None) -> str | None:
     return None
 
 
-def _first_text(raw: Mapping[str, Any], keys: tuple[str, ...]) -> str | None:
-    return _as_text(_first_value(raw, keys))
+def _collapse(text: str) -> str:
+    """Internal whitespace runs collapsed to single spaces."""
+    return " ".join(text.split())
 
 
 def parse_course_name(raw_name: str) -> CourseRef:
-    """A cache course string -> CourseRef, splitting a trailing period.
+    """A cache course string -> CourseRef (see the schema notes above).
 
-    "Math 8 P4" -> CourseRef(name="Math 8", period="P4"); a name with no
-    period marker keeps the full name and period=None. The period is
-    canonicalized to "P<n>" so differently-styled sources agree.
+    "1801 - 1    Language Arts 8" -> CourseRef(name="Language Arts 8",
+    period="P1"). A name with no code prefix keeps the whole
+    (whitespace-collapsed) name with period=None — never a crash.
     """
-    name = raw_name.strip()
-    match = _PERIOD_SUFFIX.match(name)
+    match = _COURSE_PREFIX.match(raw_name.strip())
     if match is not None:
-        base = match.group("name").strip()
-        if base:
-            return CourseRef(name=base, period=f"P{match.group('num')}")
-    return CourseRef(name=name)
+        return CourseRef(
+            name=_collapse(match.group("name")),
+            period=f"P{match.group('period')}",
+        )
+    return CourseRef(name=_collapse(raw_name))
 
 
 def parse_due_at(value: object | None) -> datetime | None:
     """A raw due value -> aware datetime; None when absent/unparseable.
 
-    Tolerates ISO dates ("2026-10-23"), ISO datetimes, and "MM/DD/YYYY".
-    Date-only values land at start of day; naive values are read as UTC.
+    The real cache writes "MM/DD/YYYY"; ISO dates/datetimes are also
+    tolerated. Date-only values land at start of day; naive values are
+    read as UTC.
     """
     if isinstance(value, datetime):
         parsed = value
@@ -124,15 +144,15 @@ def parse_due_at(value: object | None) -> datetime | None:
 
 def _parse_due_text(text: str) -> datetime | None:
     try:
+        return datetime.strptime(text, "%m/%d/%Y")
+    except ValueError:
+        pass
+    try:
         return datetime.fromisoformat(text)
     except ValueError:
         pass
     try:
         return datetime.combine(date.fromisoformat(text), time.min)
-    except ValueError:
-        pass
-    try:
-        return datetime.strptime(text, "%m/%d/%Y")
     except ValueError:
         return None
 
@@ -140,161 +160,163 @@ def _parse_due_text(text: str) -> datetime | None:
 def score_text(raw: Mapping[str, Any]) -> str | None:
     """The item's score in the source's own rendering; None when unscored.
 
-    Numbers render without a trailing ".0" (98.0 -> "98", 87.77 stays
-    "87.77"); strings pass through stripped; booleans are not scores.
+    The real cache's ``score`` is a number or null. Numbers render
+    without a trailing ".0" (80.0 -> "80", 87.77 stays "87.77");
+    strings pass through stripped; booleans are not scores.
     """
-    value = _first_value(raw, _SCORE_KEYS)
+    value: object = raw.get("score")
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, str):
         text = value.strip()
         return text if text else None
-    if isinstance(value, (int, float)):
-        return f"{value:g}" if isinstance(value, float) else str(value)
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, int):
+        return str(value)
     return None
 
 
-def _is_missing(raw: Mapping[str, Any]) -> bool:
-    """True only on an explicit missing signal (flag or status string)."""
-    flag = raw.get("missing")
-    if flag is True:
-        return True
-    if isinstance(flag, str) and flag.strip().casefold() in {"true", "yes"}:
-        return True
-    status = raw.get("status")
-    return isinstance(status, str) and status.strip().casefold() == "missing"
+def map_status(
+    raw: Mapping[str, Any],
+    *,
+    reference_date: date,
+) -> ItemStatus:
+    """Status from score + due date only (see the module docstring).
 
-
-def map_status(raw: Mapping[str, Any]) -> ItemStatus:
-    """Conservative status mapping (HAC lags; see module docstring).
-
-    A score outranks a missing flag: a scored item is known-graded, the
-    richest signal (and the merge engine's ordering agrees). DONE is
-    never produced — the cache has no turned-in signal.
+    GRADED when a score is present; otherwise MISSING when the due
+    date is strictly before ``reference_date``; otherwise ASSIGNED.
+    An absent or unparseable due date can never make an item MISSING.
     """
     if score_text(raw) is not None:
         return ItemStatus.GRADED
-    if _is_missing(raw):
+    due = parse_due_at(raw.get("date_due"))
+    if due is not None and due.date() < reference_date:
         return ItemStatus.MISSING
     return ItemStatus.ASSIGNED
 
 
-def map_kind(raw: Mapping[str, Any]) -> DriverKind:
-    """The item kind: a known kind word wins; absent means ASSIGNMENT
-    (HAC classwork is assignment-shaped); an unknown word means OTHER."""
-    text = _first_text(raw, _KIND_KEYS)
-    if text is None:
-        return DriverKind.ASSIGNMENT
-    try:
-        return DriverKind(text.strip().casefold().replace(" ", "_"))
-    except ValueError:
-        return DriverKind.OTHER
+def map_kind(category: str | None) -> DriverKind:
+    """Kind from the free-text category via the heuristic table;
+    absent/unmatched categories are ASSIGNMENT (HAC classwork is
+    assignment-shaped by default)."""
+    if category:
+        text = category.casefold()
+        for needle, kind in _KIND_RULES:
+            if needle in text:
+                return kind
+    return DriverKind.ASSIGNMENT
 
 
 def map_item(
     raw: object,
     *,
+    course_name: str,
     student: StudentRef,
     scraped_at: datetime,
+    reference_date: date,
 ) -> Lookup[DriverRecord]:
     """One raw cache item -> DriverRecord, or Missing with the reason.
 
-    Un-mappable means: not an object, no course name, or no title. Every
-    other field is optional (absent -> None, never a crash).
+    The course comes from the enclosing course node (items carry no
+    course field). Un-mappable means: not an object, or no title.
+    Every other field is optional (absent -> None, never a crash), and
+    ``source_ref`` is always None — cache items have no id.
     """
     if not isinstance(raw, Mapping):
         return Missing(reason=f"item is not an object ({type(raw).__name__})")
-    course_text = _first_text(raw, _COURSE_KEYS)
-    if course_text is None:
-        return Missing(reason="item has no course name")
-    title = _first_text(raw, _TITLE_KEYS)
+    title = _as_text(raw.get("name"))
     if title is None:
-        return Missing(reason=f"item in {course_text!r} has no title")
+        return Missing(reason=f"item in {course_name!r} has no title")
     return Found(
         value=DriverRecord(
             student=student,
-            course=parse_course_name(course_text),
+            course=parse_course_name(course_name),
             title=title,
-            kind=map_kind(raw),
-            status=map_status(raw),
+            kind=map_kind(_as_text(raw.get("category"))),
+            status=map_status(raw, reference_date=reference_date),
             source_kind=SourceKind.HAC,
             scraped_at=scraped_at,
-            due_at=parse_due_at(_first_value(raw, _DUE_KEYS)),
+            due_at=parse_due_at(raw.get("date_due")),
             score_text=score_text(raw),
-            source_ref=_first_text(raw, ("id",)),
+            source_ref=None,
         )
     )
 
 
-def _student_marker(item: Mapping[str, Any]) -> str | None:
-    return _first_text(item, _STUDENT_MARKER_KEYS)
+@dataclass(frozen=True, kw_only=True)
+class CourseMapping:
+    """One course node's mapping outcome: its records and skip reasons."""
+
+    records: tuple[DriverRecord, ...]
+    skipped: tuple[str, ...]
 
 
-def _student_node(payload: Mapping[str, Any], student_id: str) -> object | None:
-    """The student's node in a keyed cache payload; None when absent."""
-    if student_id in payload:
-        node: object = payload[student_id]
-        return node
-    students = payload.get("students")
-    if isinstance(students, Mapping) and student_id in students:
-        found: object = students[student_id]
-        return found
-    return None
+def map_course(
+    raw: object,
+    *,
+    student: StudentRef,
+    scraped_at: datetime,
+    reference_date: date,
+) -> CourseMapping:
+    """One raw course node -> its records plus per-item skip reasons.
 
-
-def _items_from_node(node: object, student_id: str) -> Lookup[list[object]]:
-    """A student node -> its raw item list (see the schema assumptions)."""
-    if isinstance(node, list):
-        return Found(value=list(node))
-    if isinstance(node, Mapping):
-        for key in _ITEM_LIST_KEYS:
-            items = node.get(key)
-            if isinstance(items, list):
-                return Found(value=list(items))
-        return Missing(
-            reason=(
-                f"cache node for student {student_id!r} has no item list "
-                f"under any of {_ITEM_LIST_KEYS}"
-            )
-        )
-    return Missing(
-        reason=f"cache node for student {student_id!r} is a {type(node).__name__}"
-    )
-
-
-def extract_student_items(
-    payload: object,
-    student_id: str,
-) -> Lookup[list[object]]:
-    """The raw items for one student in a parsed cache payload.
-
-    Missing means the student is not in the cache (or, for a node with
-    no recognizable item list, why not). Raw entries pass through
-    untouched — including non-object entries — so map_item can count
-    them as skipped rather than losing them silently here.
+    Structural problems (not an object, no usable name, no
+    ``assignments`` list) degrade to skip reasons, never exceptions —
+    the adapter counts records + skipped as the node's item total.
     """
-    if isinstance(payload, Mapping):
-        node = _student_node(payload, student_id)
-        if node is None:
-            return Missing(reason=f"student {student_id!r} not in cache")
-        return _items_from_node(node, student_id)
-    if isinstance(payload, list):
-        entries: list[object] = list(payload)
-        marked = [
-            entry
-            for entry in entries
-            if isinstance(entry, Mapping) and _student_marker(entry) is not None
-        ]
-        if not marked:
-            return Found(value=entries)
-        matched: list[object] = [
-            entry
-            for entry in marked
-            if _student_marker(entry) == student_id
-        ]
-        if not matched:
-            return Missing(reason=f"student {student_id!r} not in cache")
-        return Found(value=matched)
-    return Missing(
-        reason=f"cache payload is a {type(payload).__name__}, not an object or list"
-    )
+    if not isinstance(raw, Mapping):
+        return CourseMapping(
+            records=(),
+            skipped=(f"course entry is not an object ({type(raw).__name__})",),
+        )
+    name = _as_text(raw.get("name"))
+    assignments = raw.get("assignments")
+    if not isinstance(assignments, list):
+        where = f"course {name!r}" if name is not None else "an unnamed course"
+        return CourseMapping(
+            records=(),
+            skipped=(f"{where} has no assignments list",),
+        )
+    if name is None:
+        return CourseMapping(
+            records=(),
+            skipped=tuple(
+                "item in a course with no name" for _ in assignments
+            ),
+        )
+    records: list[DriverRecord] = []
+    skipped: list[str] = []
+    for item in assignments:
+        match map_item(
+            item,
+            course_name=name,
+            student=student,
+            scraped_at=scraped_at,
+            reference_date=reference_date,
+        ):
+            case Found(value=record):
+                records.append(record)
+            case Missing(reason=reason):
+                skipped.append(reason)
+    return CourseMapping(records=tuple(records), skipped=tuple(skipped))
+
+
+def extract_courses(payload: object) -> Lookup[list[object]]:
+    """The raw course nodes in a parsed cache payload.
+
+    The real schema's only top-level shape is an object with a
+    ``courses`` list; anything else is Missing with the reason (the
+    payload's ``student_id`` is null in the real cache and stays
+    ignored — the configured student is the authority). Raw course
+    entries pass through untouched so map_course can count structural
+    problems as skipped rather than losing them silently here.
+    """
+    if not isinstance(payload, Mapping):
+        return Missing(
+            reason=f"cache payload is a {type(payload).__name__}, not an object"
+        )
+    courses = payload.get("courses")
+    if not isinstance(courses, list):
+        return Missing(reason="cache payload has no 'courses' list")
+    return Found(value=list(courses))

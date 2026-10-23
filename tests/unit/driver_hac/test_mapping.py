@@ -1,4 +1,10 @@
-"""The HAC field-mapping layer: pure functions, table-driven."""
+"""The HAC field-mapping layer: pure functions, table-driven.
+
+Fixtures and tables encode the REAL cache schema (verified 2026-10-22;
+see school.driver_hac.mapping's docstring): a per-student object with a
+``courses`` list, course names carrying a "<code> - <period>" prefix,
+items keyed name/category/date_assigned/date_due/max_points/score/notes.
+"""
 
 from datetime import date, datetime, timedelta, timezone
 
@@ -10,10 +16,10 @@ from school.domain import (
     Found,
     ItemStatus,
     Missing,
-    StudentRef,
 )
 from school.driver_hac.mapping import (
-    extract_student_items,
+    extract_courses,
+    map_course,
     map_item,
     map_kind,
     map_status,
@@ -21,24 +27,34 @@ from school.driver_hac.mapping import (
     parse_due_at,
     score_text,
 )
-from driver_hac.conftest import NOW, SAM
-
-AIDEN = StudentRef(id="aiden", display_name="Aiden")
+from driver_hac.conftest import NOW, REFERENCE_DATE, SAM
 
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("Math 8 P4", CourseRef(name="Math 8", period="P4")),
-        ("Science P2", CourseRef(name="Science", period="P2")),
-        ("Social Studies Period 4", CourseRef(name="Social Studies", period="P4")),
-        ("Math 8 - Period 3", CourseRef(name="Math 8", period="P3")),
-        ("Wind Ensemble (P4)", CourseRef(name="Wind Ensemble", period="P4")),
+        # The real prefix shape: code, period digit, display name.
+        (
+            "1801 - 1    Language Arts 8",
+            CourseRef(name="Language Arts 8", period="P1"),
+        ),
+        (
+            "4801ADV - 4    Social Studies 8 Advanced",
+            CourseRef(name="Social Studies 8 Advanced", period="P4"),
+        ),
+        (
+            "1801 - 1 Language Arts 8",  # single-space separators still parse
+            CourseRef(name="Language Arts 8", period="P1"),
+        ),
+        # No prefix pattern: the whole collapsed name, period None.
         ("Wind Ensemble", CourseRef(name="Wind Ensemble")),
-        ("AP 4", CourseRef(name="AP 4")),  # 'P' not at a token boundary
-        ("Room 204", CourseRef(name="Room 204")),  # digits alone are not a period
-        ("P4", CourseRef(name="P4")),  # a marker with no name is just a name
-        ("  Choir ", CourseRef(name="Choir")),
+        ("  Wind   Ensemble  ", CourseRef(name="Wind Ensemble")),
+        # A dash without a period digit is not the prefix.
+        ("1801 - Language Arts 8", CourseRef(name="1801 - Language Arts 8")),
+        # A two-digit "period" is not the real shape's single digit.
+        ("1234 - 12    Gym", CourseRef(name="1234 - 12 Gym")),
+        # Code + period but nothing after: not the prefix either.
+        ("1801 - 1", CourseRef(name="1801 - 1")),
     ],
 )
 def test_parse_course_name(raw: str, expected: CourseRef) -> None:
@@ -48,6 +64,8 @@ def test_parse_course_name(raw: str, expected: CourseRef) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
+        ("10/23/2026", datetime(2026, 10, 23, tzinfo=timezone.utc)),
+        ("1/5/2027", datetime(2027, 1, 5, tzinfo=timezone.utc)),
         ("2026-10-23", datetime(2026, 10, 23, tzinfo=timezone.utc)),
         (
             "2026-10-23T15:30:00",
@@ -57,8 +75,6 @@ def test_parse_course_name(raw: str, expected: CourseRef) -> None:
             "2026-10-23T15:30:00Z",
             datetime(2026, 10, 23, 15, 30, tzinfo=timezone.utc),
         ),
-        ("10/23/2026", datetime(2026, 10, 23, tzinfo=timezone.utc)),
-        ("1/5/2027", datetime(2027, 1, 5, tzinfo=timezone.utc)),
         (date(2026, 10, 23), datetime(2026, 10, 23, tzinfo=timezone.utc)),
         (
             datetime(2026, 10, 23, 9, 0),  # naive: read as UTC
@@ -85,18 +101,18 @@ def test_parse_due_at(value: object, expected: datetime | None) -> None:
     [
         ({"score": 98}, "98"),
         ({"score": 98.0}, "98"),
+        ({"score": 80.0}, "80"),
         ({"score": 87.77}, "87.77"),
-        ({"score": 0}, "0"),  # a zero score is still a score
-        ({"score": "18/20"}, "18/20"),
+        ({"score": 0.0}, "0"),  # a zero score is still a score
+        ({"score": 0}, "0"),
+        ({"score": "18/20"}, "18/20"),  # strings pass through (tolerance)
         ({"score": " 9/10 "}, "9/10"),
-        ({"grade": "A-"}, "A-"),  # fallback field name
-        ({"score_text": "7 pts"}, "7 pts"),  # fallback field name
-        ({"score": None, "grade": "B"}, "B"),  # None does not shadow fallback
+        ({"score": None}, None),  # the real cache's unscored marker
+        ({}, None),  # a missing score key is just unscored
         ({"score": ""}, None),
         ({"score": "   "}, None),
         ({"score": True}, None),  # booleans are not scores
         ({"score": [98]}, None),
-        ({}, None),
     ],
 )
 def test_score_text(raw: dict[str, object], expected: str | None) -> None:
@@ -106,99 +122,122 @@ def test_score_text(raw: dict[str, object], expected: str | None) -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ({"score": 55}, ItemStatus.GRADED),
-        ({"score": 0}, ItemStatus.GRADED),
-        # a score outranks a missing flag: graded is the richer signal
-        ({"score": 55, "missing": True}, ItemStatus.GRADED),
-        ({"missing": True}, ItemStatus.MISSING),
-        ({"missing": "true"}, ItemStatus.MISSING),
-        ({"missing": "yes"}, ItemStatus.MISSING),
-        ({"missing": False}, ItemStatus.ASSIGNED),
-        ({"status": "missing"}, ItemStatus.MISSING),
-        ({"status": "Missing"}, ItemStatus.MISSING),
-        ({"status": " missing "}, ItemStatus.MISSING),
-        ({"status": "assigned"}, ItemStatus.ASSIGNED),
-        # HAC has no turned-in signal; never fabricate DONE
-        ({"status": "turned_in"}, ItemStatus.ASSIGNED),
-        ({"status": "graded"}, ItemStatus.ASSIGNED),  # no score, no grade
+        # A present score is GRADED — even 0.0, even when past due:
+        # the cache cannot distinguish earned-zero from missing-zero.
+        ({"score": 55.0, "date_due": "10/20/2026"}, ItemStatus.GRADED),
+        ({"score": 0.0, "date_due": "10/20/2026"}, ItemStatus.GRADED),
+        ({"score": 80.0}, ItemStatus.GRADED),
+        # Unscored + due strictly before the reference date -> MISSING.
+        ({"score": None, "date_due": "10/21/2026"}, ItemStatus.MISSING),
+        ({"date_due": "09/01/2026"}, ItemStatus.MISSING),  # score key absent
+        # Unscored + due on/after the reference date -> ASSIGNED.
+        ({"score": None, "date_due": "10/22/2026"}, ItemStatus.ASSIGNED),
+        ({"score": None, "date_due": "10/23/2026"}, ItemStatus.ASSIGNED),
+        # No due date (or an unparseable one) can never be MISSING.
+        ({"score": None}, ItemStatus.ASSIGNED),
+        ({"score": None, "date_due": "not a date"}, ItemStatus.ASSIGNED),
         ({}, ItemStatus.ASSIGNED),
     ],
 )
 def test_map_status(raw: dict[str, object], expected: ItemStatus) -> None:
-    assert map_status(raw) is expected
+    assert map_status(raw, reference_date=REFERENCE_DATE) is expected
+
+
+def test_map_status_reference_date_is_the_boundary() -> None:
+    raw = {"score": None, "date_due": "10/22/2026"}
+    assert map_status(raw, reference_date=date(2026, 10, 22)) is (
+        ItemStatus.ASSIGNED
+    )
+    assert map_status(raw, reference_date=date(2026, 10, 23)) is (
+        ItemStatus.MISSING
+    )
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("category", "expected"),
     [
-        ({}, DriverKind.ASSIGNMENT),  # absent: HAC classwork is assignments
-        ({"kind": "quiz"}, DriverKind.QUIZ),
-        ({"kind": "Project"}, DriverKind.PROJECT),
-        ({"category": "practice"}, DriverKind.PRACTICE),  # fallback field
-        ({"type": "test"}, DriverKind.TEST),  # fallback field
-        ({"kind": "homework"}, DriverKind.OTHER),  # unknown word
-        ({"kind": ""}, DriverKind.ASSIGNMENT),  # blank counts as absent
+        # Every category value observed in the real cache (2026-10-22):
+        ("Summative (Product)", DriverKind.TEST),
+        ("Assessments", DriverKind.TEST),
+        ("Tests-Projects", DriverKind.TEST),  # 'test' outranks 'project'
+        ("Daily Work-Quizzes", DriverKind.QUIZ),
+        ("Weekly Assignments", DriverKind.ASSIGNMENT),
+        ("Daily Practice", DriverKind.PRACTICE),
+        ("Daily grade-assignments", DriverKind.ASSIGNMENT),
+        ("Daily Work-Participation", DriverKind.ASSIGNMENT),
+        ("Participation", DriverKind.ASSIGNMENT),
+        ("Sectionals", DriverKind.ASSIGNMENT),
+        ("Practice Records", DriverKind.PRACTICE),
+        ("Performance", DriverKind.ASSIGNMENT),
+        # Heuristic behavior beyond the observed set:
+        ("Pop Quiz Friday", DriverKind.QUIZ),
+        ("Group Project", DriverKind.PROJECT),
+        ("Unit Test Review", DriverKind.TEST),
+        # Absent/blank means ASSIGNMENT.
+        (None, DriverKind.ASSIGNMENT),
+        ("", DriverKind.ASSIGNMENT),
     ],
 )
-def test_map_kind(raw: dict[str, object], expected: DriverKind) -> None:
-    assert map_kind(raw) is expected
+def test_map_kind(category: str | None, expected: DriverKind) -> None:
+    assert map_kind(category) is expected
+
+
+def _item(raw: dict[str, object]) -> object:
+    return map_item(
+        raw,
+        course_name="1801 - 1    Language Arts 8",
+        student=SAM,
+        scraped_at=NOW,
+        reference_date=REFERENCE_DATE,
+    )
 
 
 def test_map_item_full() -> None:
-    result = map_item(
+    result = _item(
         {
-            "id": "a5",
-            "course": "Social Studies Period 4",
-            "title": "RTR Timeline Project",
-            "due_date": "2026-10-23",
-            "score": "18/20",
-            "kind": "project",
-        },
-        student=SAM,
-        scraped_at=NOW,
+            "name": "Literary Essay Unit Assessment",
+            "category": "Summative (Product)",
+            "date_assigned": "09/29/2026",
+            "date_due": "10/02/2026",
+            "max_points": 100.0,
+            "score": 80.0,
+            "notes": "",
+        }
     )
     assert isinstance(result, Found)
     record = result.unwrap()
     assert record.student is SAM
-    assert record.course == CourseRef(name="Social Studies", period="P4")
-    assert record.title == "RTR Timeline Project"
-    assert record.kind is DriverKind.PROJECT
+    assert record.course == CourseRef(name="Language Arts 8", period="P1")
+    assert record.title == "Literary Essay Unit Assessment"
+    assert record.kind is DriverKind.TEST
     assert record.status is ItemStatus.GRADED
-    assert record.score_text == "18/20"
-    assert record.due_at == datetime(2026, 10, 23, tzinfo=timezone.utc)
+    assert record.score_text == "80"
+    assert record.due_at == datetime(2026, 10, 2, tzinfo=timezone.utc)
     assert record.scraped_at == NOW
-    assert record.source_ref == "a5"
-
-
-def test_map_item_alternate_field_names() -> None:
-    result = map_item(
-        {"class": "Math 8", "assignment": "Workbook p. 42", "due": "10/24/2026"},
-        student=SAM,
-        scraped_at=NOW,
-    )
-    record = result.unwrap()
-    assert record.course.name == "Math 8"
-    assert record.title == "Workbook p. 42"
-    assert record.due_at == datetime(2026, 10, 24, tzinfo=timezone.utc)
-    assert record.status is ItemStatus.ASSIGNED
-    assert record.score_text is None
+    # Cache items have no id: dedup carries identity, not source_ref.
     assert record.source_ref is None
 
 
-def test_map_item_numeric_title_is_text() -> None:
-    record = map_item(
-        {"course": "Math 8", "title": 42}, student=SAM, scraped_at=NOW
+def test_map_item_unscored_past_due_is_missing() -> None:
+    record = _item(
+        {"name": "Vocabulary Quiz 4", "date_due": "10/20/2026", "score": None}
     ).unwrap()
-    assert record.title == "42"
+    assert record.status is ItemStatus.MISSING
+    assert record.score_text is None
 
 
-def test_map_item_minimal() -> None:
-    record = map_item(
-        {"course": "Choir", "title": "Warmups"}, student=SAM, scraped_at=NOW
-    ).unwrap()
+def test_map_item_tolerates_missing_optional_keys() -> None:
+    """Only ``name`` is required; every other real key may be absent."""
+    record = _item({"name": "Warmups"}).unwrap()
     assert record.due_at is None
     assert record.kind is DriverKind.ASSIGNMENT
     assert record.status is ItemStatus.ASSIGNED
+    assert record.score_text is None
+
+
+def test_map_item_numeric_title_is_text() -> None:
+    record = _item({"name": 42}).unwrap()
+    assert record.title == "42"
 
 
 @pytest.mark.parametrize(
@@ -206,97 +245,127 @@ def test_map_item_minimal() -> None:
     [
         ("a string, not an object", "not an object"),
         (["a", "list"], "not an object"),
-        ({"title": "No course"}, "no course name"),
-        ({"course": "   ", "title": "Blank course"}, "no course name"),
-        ({"course": "ELA"}, "no title"),
-        ({"course": "ELA", "title": "  "}, "no title"),
+        ({"category": "Daily Practice"}, "no title"),
+        ({"name": "  "}, "no title"),
     ],
 )
 def test_map_item_unmappable(raw: object, reason_part: str) -> None:
-    result = map_item(raw, student=SAM, scraped_at=NOW)
+    result = map_item(
+        raw,
+        course_name="Wind Ensemble",
+        student=SAM,
+        scraped_at=NOW,
+        reference_date=REFERENCE_DATE,
+    )
     assert isinstance(result, Missing)
     assert reason_part in result.reason
 
 
-def _found_items(payload: object, student_id: str = "sam") -> list[object]:
-    result = extract_student_items(payload, student_id)
+def _course(raw: object) -> tuple[list[str], list[str]]:
+    mapping = map_course(
+        raw,
+        student=SAM,
+        scraped_at=NOW,
+        reference_date=REFERENCE_DATE,
+    )
+    return [r.title for r in mapping.records], list(mapping.skipped)
+
+
+def test_map_course_maps_items_under_the_course_name() -> None:
+    titles, skipped = _course(
+        {
+            "name": "4801ADV - 4    Social Studies 8 Advanced",
+            "average": 88.5,
+            "assignments": [
+                {"name": "Timeline Project", "score": 87.77},
+                {"name": "Map Skills Check", "score": 0.0},
+            ],
+        }
+    )
+    assert titles == ["Timeline Project", "Map Skills Check"]
+    assert skipped == []
+
+
+def test_map_course_counts_bad_items_as_skipped() -> None:
+    titles, skipped = _course(
+        {
+            "name": "3301 - 4    Mathematics 8",
+            "assignments": [{"name": "Good"}, {"category": "x"}, "stray"],
+        }
+    )
+    assert titles == ["Good"]
+    assert len(skipped) == 2
+    assert any("no title" in reason for reason in skipped)
+    assert any("not an object" in reason for reason in skipped)
+
+
+def test_map_course_not_an_object() -> None:
+    titles, skipped = _course("junk")
+    assert titles == []
+    assert len(skipped) == 1
+    assert "not an object" in skipped[0]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"name": "Math 8"},  # assignments key absent
+        {"name": "Math 8", "assignments": {"not": "a list"}},
+        {"assignments": None},
+    ],
+)
+def test_map_course_without_assignments_list(raw: object) -> None:
+    titles, skipped = _course(raw)
+    assert titles == []
+    assert len(skipped) == 1
+    assert "no assignments list" in skipped[0]
+
+
+def test_map_course_with_no_name_skips_each_item() -> None:
+    titles, skipped = _course(
+        {"name": "   ", "assignments": [{"name": "A"}, {"name": "B"}]}
+    )
+    assert titles == []
+    assert skipped == ["item in a course with no name"] * 2
+
+
+def _found_courses(payload: object) -> list[object]:
+    result = extract_courses(payload)
     assert isinstance(result, Found)
     return result.unwrap()
 
 
-def test_extract_from_student_keyed_payload() -> None:
-    payload = {"sam": [{"title": "x"}], "owen": [{"title": "y"}]}
-    assert _found_items(payload) == [{"title": "x"}]
-
-
-def test_extract_from_students_wrapper() -> None:
-    payload = {"students": {"sam": {"classwork": [{"title": "x"}]}}}
-    assert _found_items(payload) == [{"title": "x"}]
-
-
-def test_extract_student_node_as_bare_list() -> None:
-    payload = {"students": {"sam": [{"title": "x"}, {"title": "z"}]}}
-    assert _found_items(payload) == [{"title": "x"}, {"title": "z"}]
-
-
-@pytest.mark.parametrize("key", ["classwork", "assignments", "items"])
-def test_extract_item_list_key_fallbacks(key: str) -> None:
-    payload = {"sam": {key: [{"title": "x"}]}}
-    assert _found_items(payload) == [{"title": "x"}]
-
-
-def test_extract_preserves_non_object_entries_for_skip_counting() -> None:
-    payload = {"sam": [{"title": "x"}, "stray", 7]}
-    assert _found_items(payload) == [{"title": "x"}, "stray", 7]
-
-
-def test_extract_student_absent() -> None:
-    result = extract_student_items({"owen": []}, "sam")
-    assert isinstance(result, Missing)
-    assert "'sam' not in cache" in result.reason
-    result = extract_student_items({"students": {"owen": []}}, "sam")
-    assert isinstance(result, Missing)
-
-
-def test_extract_node_without_item_list() -> None:
-    result = extract_student_items({"sam": {"notes": []}}, "sam")
-    assert isinstance(result, Missing)
-    assert "no item list" in result.reason
-
-
-def test_extract_node_of_wrong_type() -> None:
-    result = extract_student_items({"sam": "junk"}, "sam")
-    assert isinstance(result, Missing)
-    assert "is a str" in result.reason
-
-
-def test_extract_students_wrapper_of_wrong_type() -> None:
-    result = extract_student_items({"students": [1, 2]}, "sam")
-    assert isinstance(result, Missing)
-    assert "not in cache" in result.reason
-
-
-def test_extract_from_bare_list_without_markers() -> None:
-    payload = [{"title": "x"}, {"title": "y"}]
-    assert _found_items(payload) == payload
-
-
-def test_extract_from_bare_list_with_markers_filters() -> None:
-    payload = [
-        {"student": "sam", "title": "x"},
-        {"student_id": "owen", "title": "y"},
-        {"title": "unmarked"},  # unmarked entries drop out once markers exist
+def test_extract_courses_real_shape() -> None:
+    payload = {
+        "student_id": None,  # present in the real cache; ignored
+        "courses": [{"name": "Wind Ensemble", "assignments": []}],
+    }
+    assert _found_courses(payload) == [
+        {"name": "Wind Ensemble", "assignments": []}
     ]
-    assert _found_items(payload) == [{"student": "sam", "title": "x"}]
 
 
-def test_extract_from_bare_list_markers_but_no_match() -> None:
-    result = extract_student_items([{"student": "owen", "title": "y"}], "sam")
+def test_extract_courses_empty_list_is_found() -> None:
+    assert _found_courses({"courses": []}) == []
+
+
+def test_extract_courses_preserves_non_object_entries() -> None:
+    payload = {"courses": [{"name": "x"}, "stray", 7]}
+    assert _found_courses(payload) == [{"name": "x"}, "stray", 7]
+
+
+@pytest.mark.parametrize(
+    ("payload", "reason_part"),
+    [
+        ({"student_id": None}, "no 'courses' list"),
+        ({"courses": {"not": "a list"}}, "no 'courses' list"),
+        ({"courses": None}, "no 'courses' list"),
+        ([{"name": "x"}], "not an object"),
+        (42, "not an object"),
+        ("cache?", "not an object"),
+    ],
+)
+def test_extract_courses_missing(payload: object, reason_part: str) -> None:
+    result = extract_courses(payload)
     assert isinstance(result, Missing)
-    assert "not in cache" in result.reason
-
-
-def test_extract_from_scalar_payload() -> None:
-    result = extract_student_items(42, "sam")
-    assert isinstance(result, Missing)
-    assert "not an object or list" in result.reason
+    assert reason_part in result.reason

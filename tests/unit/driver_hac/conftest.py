@@ -7,7 +7,7 @@ is pinned to CACHE_MTIME so scraped_at assertions are exact.
 
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from school.domain import StudentRef
@@ -19,6 +19,9 @@ SAM = StudentRef(id="sam", display_name="Sam")
 NOW = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
 FINISH = datetime(2026, 10, 22, 18, 5, tzinfo=timezone.utc)
 CACHE_MTIME = datetime(2026, 10, 21, 18, 13, tzinfo=timezone.utc)
+# The reference "today" for due-relative status derivation; matches
+# NOW's calendar date, which is what the driver threads into load().
+REFERENCE_DATE = date(2026, 10, 22)
 
 
 def stage_cache(tmp_path: Path, name: str) -> Path:

@@ -17,7 +17,7 @@ time is available.
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from school.domain import DriverRecord, Found, Missing, StudentRef
@@ -38,9 +38,11 @@ class CacheSnapshot:
 
     ``skipped`` holds the per-item reasons (from the mapping layer) for
     items that could not be mapped; ``total_items`` is records + skipped.
-    ``student_found`` is False when the cache has no node for the target
-    student — a successful read with nothing to map, so ``note`` carries
-    the explanation instead of a failure.
+    ``student_found`` is False when the cache payload has no ``courses``
+    list — a successful read with nothing to map, so ``note`` carries
+    the explanation instead of a failure. (The cache file is
+    per-student; its own ``student_id`` field is null and ignored —
+    the configured student is the authority.)
     """
 
     scraped_at: datetime
@@ -99,12 +101,17 @@ class HacCacheAdapter:
             return None
         return datetime.fromtimestamp(mtime, tz=timezone.utc)
 
-    def load(self) -> CacheSnapshot:
+    def load(self, *, reference_date: date) -> CacheSnapshot:
         """Read, parse, and map the cache for the target student.
+
+        ``reference_date`` is the caller's "today" for the mapping
+        layer's due-relative status derivation (the driver's
+        ScrapeContext.now); it is injected, never read from a wall
+        clock here.
 
         Raises CacheLoadError when the file is missing/unreadable,
         invalid JSON, or a JSON shape that cannot be a cache at all.
-        A student absent from a well-formed cache is NOT an error (see
+        A cache payload with no ``courses`` list is NOT an error (see
         CacheSnapshot.student_found).
         """
         path = self._path_provider()
@@ -118,18 +125,24 @@ class HacCacheAdapter:
             raise CacheLoadError(
                 f"HAC cache at {path} is not valid JSON: {exc}"
             ) from exc
-        if not isinstance(payload, (Mapping, list)):
+        if not isinstance(payload, Mapping):
             raise CacheLoadError(
                 f"HAC cache at {path} has an unrecognized shape "
-                f"({type(payload).__name__}); expected an object or list"
+                f"({type(payload).__name__}); expected an object "
+                f"with a 'courses' list"
             )
         scraped_at = self._mtime(path)
         if scraped_at is None:
             scraped_at = self._clock()
-        return self._snapshot(payload, scraped_at)
+        return self._snapshot(payload, scraped_at, reference_date)
 
-    def _snapshot(self, payload: object, scraped_at: datetime) -> CacheSnapshot:
-        match mapping.extract_student_items(payload, self._student.id):
+    def _snapshot(
+        self,
+        payload: object,
+        scraped_at: datetime,
+        reference_date: date,
+    ) -> CacheSnapshot:
+        match mapping.extract_courses(payload):
             case Missing(reason=reason):
                 return CacheSnapshot(
                     scraped_at=scraped_at,
@@ -139,22 +152,23 @@ class HacCacheAdapter:
                     student_found=False,
                     note=reason,
                 )
-            case Found(value=raw_items):
+            case Found(value=raw_courses):
                 pass
         records: list[DriverRecord] = []
         skipped: list[str] = []
-        for raw in raw_items:
-            match mapping.map_item(
-                raw, student=self._student, scraped_at=scraped_at
-            ):
-                case Found(value=record):
-                    records.append(record)
-                case Missing(reason=reason):
-                    skipped.append(reason)
+        for raw_course in raw_courses:
+            course = mapping.map_course(
+                raw_course,
+                student=self._student,
+                scraped_at=scraped_at,
+                reference_date=reference_date,
+            )
+            records.extend(course.records)
+            skipped.extend(course.skipped)
         return CacheSnapshot(
             scraped_at=scraped_at,
             records=tuple(records),
             skipped=tuple(skipped),
-            total_items=len(raw_items),
+            total_items=len(records) + len(skipped),
             student_found=True,
         )
