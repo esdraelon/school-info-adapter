@@ -1,0 +1,28 @@
+# Build backend: setuptools (src layout). Chosen for M0 because its
+# editable-install + package-dir handling is the most battle-tested of the
+# options; hatchling remains a drop-in alternative if we ever want it.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "school-info-adapter"
+version = "0.1.0"
+description = "School Information Adapter: pluggable source drivers feeding normalized due-item (Driver) and material (Resource) records, exposed as an MCP on hal9k."
+requires-python = ">=3.11"
+# No runtime dependencies yet — M0 is a scaffold (see docs/DESIGN.md §5).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "coverage",
+    "mypy",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
