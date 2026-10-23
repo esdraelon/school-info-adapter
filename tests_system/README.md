@@ -1,10 +1,11 @@
 # System tests
 
 End-to-end tests for the School Information Adapter live in this directory
-(`tests_system/`), separate from `tests/unit/`. **No system tests exist in
-M0** — the first one arrives with the MCP server milestone (M4). This file
-records the philosophy the suite is built under, per convention C7 of
-`docs/DESIGN.md`.
+(`tests_system/`), separate from `tests/unit/`. The first system test
+arrived with the MCP server milestone (M4): `test_end_to_end.py` boots
+drivers -> merge -> store -> MCP-over-HTTP against stub-served fixtures.
+This file records the philosophy the suite is built under, per convention
+C7 of `docs/DESIGN.md`.
 
 ## Philosophy: mock externals only (C7)
 
