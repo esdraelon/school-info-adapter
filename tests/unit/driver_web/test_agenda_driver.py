@@ -5,6 +5,7 @@ from school.driver_web import (
     AgendaDriver,
     DeckConfig,
     DeckParserRegistry,
+    WeeklyGridParser,
     default_parser_registry,
 )
 from school.driver_web.parsers import SlideRecords
@@ -170,6 +171,46 @@ def test_deck_with_only_a_blank_slide_fails_the_deck() -> None:
     assert result.run.outcome is RunOutcome.FAILURE
     assert result.run.message is not None
     assert "no parseable week" in result.run.message
+
+
+def test_parser_exception_fails_only_that_deck() -> None:
+    """M7 FIX 1: a parser raising on one deck is contained — the deck
+    becomes a failure note naming the exception class, the run is
+    PARTIAL, and the good deck's records still flow."""
+
+    class ExplodingParser:
+        def parse_slide(self, slide: SlideAlt, **kwargs: object) \
+                -> SlideRecords:
+            raise RuntimeError("kaboom: pathological slide")
+
+    registry = DeckParserRegistry(
+        {
+            "weekly-grid-v1": WeeklyGridParser(),
+            "explodes-v0": ExplodingParser(),
+        }
+    )
+    bad = DeckConfig(
+        subject="Exploding",
+        url=ALGEBRA_DECK_URL,
+        template_id="explodes-v0",
+    )
+    pages = {
+        ALGEBRA_DECK_URL: fixture_text("algebra_agenda_pub.html"),
+        MATH_DECK_URL: fixture_text("math_agenda_pub.html"),
+    }
+    driver = AgendaDriver(
+        fetcher=make_fetcher(pages), decks=(bad, MATH), parsers=registry
+    )
+    result = driver.scrape(_context())
+    assert result.run.outcome is RunOutcome.PARTIAL
+    # The good deck's records are all here; nothing leaked from the
+    # exploding deck.
+    assert len(result.drivers) == 84
+    assert {d.course.name for d in result.drivers} == {"Math 8"}
+    message = result.run.message
+    assert message is not None
+    assert "Exploding" in message
+    assert "RuntimeError" in message
 
 
 def test_driver_runs_through_the_registry() -> None:

@@ -11,7 +11,11 @@ Run accounting, mirroring the other drivers but per deck:
 - some decks fail while others produce -> PARTIAL (good decks' records
   still flow; the message names each failure)
 - every deck fails (or none are configured) -> FAILURE
-Failures are returned in the run, never raised.
+Failures are returned in the run, never raised. That includes parser
+exceptions (M7 hardening): a parser blowing up on pathological future
+HTML fails only its own deck — the parse runs into deck-local buffers
+and merges into the run only on success, so a deck contributes whole
+or not at all, and the failure note names the exception class.
 
 Resources are deduped across the run by (url, title, course): decks
 repeat the same workbook/notes links week after week, and one scrape
@@ -139,37 +143,49 @@ class AgendaDriver:
             page = self._fetcher(deck.url)
         except FetchError as exc:
             return str(exc)
-        slides = extract_slide_alts(page)
-        if not slides:
-            return "no slides extracted from the deck page"
+        # Parse into deck-local buffers, merged into the run only when
+        # the whole deck parses: a parser exception part-way through a
+        # deck must not leak half a deck into the run (see module doc).
+        deck_drivers: list[DriverRecord] = []
+        deck_resources: list[ResourceRecord] = []
+        deck_seen: set[tuple[str, str, str]] = set()
         notes: list[str] = []
         parsed_any = False
-        for slide in slides:
-            records = parser.parse_slide(
-                slide,
-                course=CourseRef(name=deck.subject),
-                student=context.student,
-                source_kind=SourceKind.AGENDA,
-                source_url=deck.url,
-                scraped_at=context.now,
-                reference=context.now.date(),
-            )
-            notes.extend(records.notes)
-            if records.week_monday is None:
-                continue
-            parsed_any = True
-            drivers.extend(records.drivers)
-            for record in records.resources:
-                key = (
-                    record.url,
-                    record.title,
-                    record.course.name if record.course else "",
+        try:
+            slides = extract_slide_alts(page)
+            if not slides:
+                return "no slides extracted from the deck page"
+            for slide in slides:
+                records = parser.parse_slide(
+                    slide,
+                    course=CourseRef(name=deck.subject),
+                    student=context.student,
+                    source_kind=SourceKind.AGENDA,
+                    source_url=deck.url,
+                    scraped_at=context.now,
+                    reference=context.now.date(),
                 )
-                if key not in seen_resources:
-                    seen_resources.add(key)
-                    resources.append(record)
+                notes.extend(records.notes)
+                if records.week_monday is None:
+                    continue
+                parsed_any = True
+                deck_drivers.extend(records.drivers)
+                for record in records.resources:
+                    key = (
+                        record.url,
+                        record.title,
+                        record.course.name if record.course else "",
+                    )
+                    if key not in seen_resources and key not in deck_seen:
+                        deck_seen.add(key)
+                        deck_resources.append(record)
+        except Exception as exc:  # noqa: BLE001 - containment is the point
+            return f"deck parse raised {type(exc).__name__}: {exc}"
         if not parsed_any:
             return "no parseable week in the deck"
+        drivers.extend(deck_drivers)
+        resources.extend(deck_resources)
+        seen_resources |= deck_seen
         return notes
 
     def _result(
