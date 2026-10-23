@@ -421,7 +421,7 @@ def test_extraction_from_all_three_tabs(
         driver = _driver(tmp_path, origin, chromium, credentials=None)
         result = driver.scrape(ScrapeContext(student=SAM, now=NOW))
     assert result.run.outcome is RunOutcome.SUCCESS, result.run.message
-    assert result.run.found == 6
+    assert result.run.found == 7
     by_title = {record.title: record for record in result.drivers}
 
     quiz = by_title["Fractions Quiz"]
@@ -462,7 +462,7 @@ def test_reauth_with_vault_credentials_then_scrape(
         driver = _driver(tmp_path, origin, chromium, credentials)
         result = driver.scrape(ScrapeContext(student=SAM, now=NOW))
     assert result.run.outcome is RunOutcome.SUCCESS, result.run.message
-    assert result.run.found == 6
+    assert result.run.found == 7
     assert "POST /do-login" in log  # the re-auth really happened
 
 

@@ -159,6 +159,15 @@ def _groups_for(tab: TodoTab) -> dict[str, _Group]:
                     )
                 ],
             ),
+            "No due date": _Group(
+                rows=[
+                    Row(
+                        name="8th Grade ELA Portfolio Goodie - "
+                        "8th Grade ELA Posted Monday, Aug 24",
+                        href="/c/3",
+                    )
+                ]
+            ),
             "Later": _Group(
                 rows=[
                     Row(
@@ -190,7 +199,12 @@ def _groups_for(tab: TodoTab) -> dict[str, _Group]:
                     "(TMEA Honor Band) 87.77 points out of possible "
                     "100 Not turned in",
                     href="/c/6",
-                )
+                ),
+                Row(
+                    name="Choir Reflection Goodie - 8th Grade ELA "
+                    "Turned in",
+                    href="/c/7",
+                ),
             ]
         )
     }
@@ -226,7 +240,7 @@ def test_extraction_from_all_three_tabs() -> None:
         ScrapeContext(student=SAM, now=NOW)
     )
     assert result.run.outcome is RunOutcome.SUCCESS, result.run.message
-    assert result.run.found == 5
+    assert result.run.found == 7
     by_title = {record.title: record for record in result.drivers}
     assert by_title["Fractions Quiz"].due_at == datetime(
         2026, 10, 23, 9, 0, tzinfo=timezone.utc
@@ -239,9 +253,13 @@ def test_extraction_from_all_three_tabs() -> None:
     )
     newton = by_title["Newton's 2nd Law Calculations"]
     assert newton.status is ItemStatus.MISSING
+    portfolio = by_title["8th Grade ELA Portfolio"]
+    assert portfolio.due_at is None  # "Posted Monday, Aug 24"
     scale = by_title["10/21 Scale Run Through with Chromatic (Wind Ensemble)"]
     assert scale.status is ItemStatus.GRADED
     assert scale.score_text == "87.77 points out of possible 100"
+    choir = by_title["Choir Reflection"]
+    assert choir.status is ItemStatus.DONE
     assert session.closed is True
 
 
@@ -253,7 +271,7 @@ def test_reauth_with_vault_credentials_then_scrape(
         ScrapeContext(student=SAM, now=NOW)
     )
     assert result.run.outcome is RunOutcome.SUCCESS, result.run.message
-    assert result.run.found == 5
+    assert result.run.found == 7
     assert session.sign_in_page().mutations == [
         "fill_email",
         "advance",
