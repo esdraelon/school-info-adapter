@@ -183,18 +183,22 @@ class _PlaywrightTodoPage:  # pragma: no cover - browser-bound adapter
     def group_headings(self) -> list[str]:
         return [
             text
-            for tag, _el, text in self._walk()
-            if tag == "h2" and text
+            for tag, element in self._walk()
+            if tag == "h2" and (text := self._text(element))
         ]
 
     def expand_group(self, heading: str) -> None:
         in_group = False
-        for tag, element, text in self._walk():
+        for tag, element in self._walk():
             if tag == "h2":
-                in_group = text == heading
+                in_group = self._text(element) == heading
                 continue
             if not in_group or tag != "button":
                 continue
+            # Text is read LIVE, at visit time: a "View all" button
+            # inside a still-collapsed group has no visible text
+            # until the toggle click above opens its group.
+            text = self._text(element)
             if text.startswith(heading):
                 if element.get_attribute("aria-expanded") == "false":
                     element.click()
@@ -204,28 +208,36 @@ class _PlaywrightTodoPage:  # pragma: no cover - browser-bound adapter
     def rows_in_group(self, heading: str) -> list[RowLink]:
         rows: list[RowLink] = []
         in_group = False
-        for tag, element, text in self._walk():
+        for tag, element in self._walk():
             if tag == "h2":
-                in_group = text == heading
+                in_group = self._text(element) == heading
                 continue
             if in_group and tag == "a":
                 rows.append(
-                    Row(name=text, href=element.get_attribute("href"))
+                    Row(
+                        name=self._text(element),
+                        href=element.get_attribute("href"),
+                    )
                 )
         return rows
 
-    def _walk(self) -> list[tuple[str, Any, str]]:
-        """(tag, element, collapsed text) for h2/button/a under main,
-        in document order."""
+    @staticmethod
+    def _text(element: Any) -> str:
+        """An element's visible text, whitespace-collapsed."""
+        return " ".join(str(element.inner_text()).split())
+
+    def _walk(self) -> list[tuple[str, Any]]:
+        """(tag, element) for h2/button/a under main, in document
+        order. Text is deliberately NOT captured here — see
+        expand_group for why reads must be live."""
         main = self._page.locator("main")
         root = main if main.count() > 0 else self._page.locator("body")
         handles = root.locator("h2, button, a")
-        walked: list[tuple[str, Any, str]] = []
+        walked: list[tuple[str, Any]] = []
         for index in range(handles.count()):
             element = handles.nth(index)
             tag = str(element.evaluate("el => el.tagName.toLowerCase()"))
-            text = " ".join(element.inner_text().split())
-            walked.append((tag, element, text))
+            walked.append((tag, element))
         return walked
 
 
