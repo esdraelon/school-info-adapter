@@ -36,9 +36,23 @@ def cmd_serve(
     fetcher: Fetcher | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> int:
-    """Serve the composed MCP app until interrupted."""
+    """Serve the composed MCP app until interrupted.
+
+    Proxy headers are trusted unconditionally: the only production
+    shape is behind the haliffer.ululuth.com gateway nginx (localhost
+    bind, token-gated), and without X-Forwarded-* trust the app builds
+    redirect targets from the internal scheme/host — the gateway
+    deploy's 307-to-http bug. Direct local requests carry no
+    X-Forwarded-* headers, so local serving is unaffected.
+    """
     app = build_app(config, fetcher=fetcher, clock=clock)
-    uvicorn.run(app.asgi_app, host=config.host, port=config.port)
+    uvicorn.run(
+        app.asgi_app,
+        host=config.host,
+        port=config.port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
     return 0
 
 

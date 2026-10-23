@@ -169,18 +169,28 @@ def test_health_after_a_successful_scrape_exits_zero(
 def test_serve_runs_uvicorn_with_the_composed_app(
     cli_config: AppConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[tuple[object, str, int]] = []
+    calls: list[tuple[object, str, int, bool, str]] = []
 
-    def fake_run(app: object, *, host: str, port: int) -> None:
-        calls.append((app, host, port))
+    def fake_run(
+        app: object,
+        *,
+        host: str,
+        port: int,
+        proxy_headers: bool,
+        forwarded_allow_ips: str,
+    ) -> None:
+        calls.append((app, host, port, proxy_headers, forwarded_allow_ips))
 
     monkeypatch.setattr(cli.uvicorn, "run", fake_run)
     code = cli.cmd_serve(cli_config, fetcher=fixture_fetcher)
     assert code == 0
-    [(app, host, port)] = calls
+    [(app, host, port, proxy_headers, forwarded_allow_ips)] = calls
     assert app is not None
     assert host == cli_config.host
     assert port == cli_config.port
+    # The gateway deploy depends on proxy-header trust (see cmd_serve).
+    assert proxy_headers is True
+    assert forwarded_allow_ips == "*"
 
 
 def test_main_returns_two_and_names_the_missing_variable(
