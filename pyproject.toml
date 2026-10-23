@@ -26,3 +26,21 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# --- Quality gates (all enforced by scripts/verify.sh) ---
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+# Coverage gate (C6): >=90% line coverage of the school package, measured
+# over the unit tests only. `coverage report` exits non-zero below this.
+[tool.coverage.run]
+source = ["school"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+# Type gate (C6): mypy strict over the whole package.
+[tool.mypy]
+strict = true
