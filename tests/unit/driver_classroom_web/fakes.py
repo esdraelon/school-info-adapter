@@ -198,11 +198,13 @@ class FakeSession:
         pages: dict[TodoTab, FakeTodoPage] | None = None,
         sign_in_page: FakeSignInPage | None = None,
         probe_error: Exception | None = None,
+        open_errors: dict[TodoTab, Exception] | None = None,
     ) -> None:
         self._probe_states = probe_states or [SessionState.AUTHENTICATED]
         self._pages = pages or {}
         self._sign_in_page = sign_in_page or FakeSignInPage()
         self._probe_error = probe_error
+        self._open_errors = open_errors or {}
         self.last_probe_detail = "fake probe detail"
         self.probe_calls = 0
         self.opened_tabs: list[TodoTab] = []
@@ -210,6 +212,17 @@ class FakeSession:
 
     def mark_authenticated(self) -> None:
         self._probe_states = [SessionState.AUTHENTICATED]
+
+    def script_sign_in(self, *, after_password: str) -> FakeSignInPage:
+        """Install a sign-in page whose success flips this session's
+        probe to AUTHENTICATED (the pairing the constructor can't
+        express, since the page's callback needs the session)."""
+        page = FakeSignInPage(
+            after_password=after_password,
+            on_signed_in=self.mark_authenticated,
+        )
+        self._sign_in_page = page
+        return page
 
     def probe(self) -> SessionState:
         self.probe_calls += 1
@@ -221,6 +234,8 @@ class FakeSession:
 
     def open_todo(self, tab: TodoTab) -> FakeTodoPage:
         self.opened_tabs.append(tab)
+        if tab in self._open_errors:
+            raise self._open_errors[tab]
         if tab not in self._pages:
             raise AssertionError(f"no fake page scripted for {tab}")
         return self._pages[tab]

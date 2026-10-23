@@ -26,6 +26,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_STALE_HAC_HOURS = 30.0
 DEFAULT_STALE_WEB_HOURS = 192.0
+DEFAULT_STALE_CLASSROOM_HOURS = 30.0
 
 
 class ConfigError(Exception):
@@ -47,6 +48,16 @@ class AppConfig:
     port: int = DEFAULT_PORT
     stale_hac_hours: float = DEFAULT_STALE_HAC_HOURS
     stale_web_hours: float = DEFAULT_STALE_WEB_HOURS
+    classroom_profile_dir: str | None = None
+    classroom_account: str | None = None
+    vault_dir: str | None = None
+    stale_classroom_hours: float = DEFAULT_STALE_CLASSROOM_HOURS
+
+    @property
+    def classroom_configured(self) -> bool:
+        """The Classroom driver is wired only when BOTH the profile
+        dir and the account are set; either alone leaves it off."""
+        return bool(self.classroom_profile_dir and self.classroom_account)
 
     @property
     def stale_thresholds(self) -> dict[SourceKind, float]:
@@ -54,14 +65,21 @@ class AppConfig:
 
         HAC gets the tight budget (its cache is refreshed by the
         grades scraper on school-day cadence); the web sources publish
-        weekly, so their budget is a week plus a day of slack. Kinds
-        absent here (CLASSROOM_WEB until M6) have no staleness verdict.
+        weekly, so their budget is a week plus a day of slack.
+        CLASSROOM_WEB joins with the tight budget only when the
+        classroom driver is configured — unconfigured kinds have no
+        staleness verdict.
         """
-        return {
+        thresholds = {
             SourceKind.HAC: self.stale_hac_hours,
             SourceKind.TEAM_SITE: self.stale_web_hours,
             SourceKind.AGENDA: self.stale_web_hours,
         }
+        if self.classroom_configured:
+            thresholds[SourceKind.CLASSROOM_WEB] = (
+                self.stale_classroom_hours
+            )
+        return thresholds
 
 
 def _required(env: Mapping[str, str], name: str) -> str:
@@ -74,6 +92,12 @@ def _required(env: Mapping[str, str], name: str) -> str:
 def _optional_string(env: Mapping[str, str], name: str, default: str) -> str:
     value = env.get(name, "")
     return value if value.strip() else default
+
+
+def _optional_value(env: Mapping[str, str], name: str) -> str | None:
+    """An optional setting with no default: None when unset/empty."""
+    value = env.get(name, "")
+    return value if value.strip() else None
 
 
 def _port(env: Mapping[str, str]) -> int:
@@ -111,6 +135,9 @@ def config_from_env(env: Mapping[str, str]) -> AppConfig:
 
     Required: SCHOOL_DB_PATH, SCHOOL_HAC_CACHE_PATH, SCHOOL_MCP_TOKEN,
     SCHOOL_DECK_REGISTRY. Everything else has a production default.
+    The Classroom keys are optional as a set: SCHOOL_CLASSROOM_PROFILE_DIR
+    + SCHOOL_CLASSROOM_ACCOUNT enable the driver (SCHOOL_VAULT_DIR adds
+    vault-backed re-auth); absent keys leave it unconfigured.
     """
     return AppConfig(
         db_path=_required(env, "SCHOOL_DB_PATH"),
@@ -133,5 +160,15 @@ def config_from_env(env: Mapping[str, str]) -> AppConfig:
         ),
         stale_web_hours=_hours(
             env, "SCHOOL_STALE_WEB_HOURS", DEFAULT_STALE_WEB_HOURS
+        ),
+        classroom_profile_dir=_optional_value(
+            env, "SCHOOL_CLASSROOM_PROFILE_DIR"
+        ),
+        classroom_account=_optional_value(env, "SCHOOL_CLASSROOM_ACCOUNT"),
+        vault_dir=_optional_value(env, "SCHOOL_VAULT_DIR"),
+        stale_classroom_hours=_hours(
+            env,
+            "SCHOOL_STALE_CLASSROOM_HOURS",
+            DEFAULT_STALE_CLASSROOM_HOURS,
         ),
     )

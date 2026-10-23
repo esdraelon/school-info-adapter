@@ -4,6 +4,11 @@ Patterns: Adapter; Strategy (page extractors); session health probe with
 re-auth escalation (extraction spec: docs/FIXTURES.md).
 """
 
+from school.driver_classroom_web.driver import (
+    RELOGIN_MESSAGE,
+    ClassroomStudentConfig,
+    ClassroomWebDriver,
+)
 from school.driver_classroom_web.extractors import (
     DueParse,
     RawRow,
@@ -22,7 +27,10 @@ from school.driver_classroom_web.session import (
 from school.driver_classroom_web.tabs import TodoTab
 
 __all__ = [
+    "RELOGIN_MESSAGE",
     "ClassroomSession",
+    "ClassroomStudentConfig",
+    "ClassroomWebDriver",
     "DueParse",
     "ProfileConfig",
     "RawRow",

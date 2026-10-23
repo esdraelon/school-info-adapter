@@ -4,9 +4,10 @@ Pattern: Composition root with manual constructor DI. ``build_app``
 takes an ``AppConfig`` plus two injectable seams — the HTTP ``Fetcher``
 (defaults to the production urllib fetcher) and the ``clock`` — and
 returns a frozen ``App`` holding the fully wired object graph:
-connection factory, repositories, the driver registry (all three
-production drivers), the query services, the scrape runner, and the
-deployable ASGI app. Tests inject a stub-mapped fetcher and a fixed
+connection factory, repositories, the driver registry (the three
+always-on production drivers, plus the Classroom driver when its
+optional config is present), the query services, the scrape runner,
+and the deployable ASGI app. Tests inject a stub-mapped fetcher and a fixed
 clock through this same path, so what production runs is what the
 system tests exercised (C7).
 
@@ -27,6 +28,12 @@ from starlette.types import ASGIApp
 from school.app.config import AppConfig, ConfigError
 from school.app.scrape_runner import ScrapeRunner
 from school.domain import SourceKind, StudentRef
+from school.driver_classroom_web import (
+    ClassroomSession,
+    ClassroomStudentConfig,
+    ClassroomWebDriver,
+    ProfileConfig,
+)
 from school.driver_hac import HacCacheAdapter, HacDriver
 from school.driver_web import (
     AgendaDriver,
@@ -37,7 +44,8 @@ from school.driver_web import (
     urllib_fetcher,
 )
 from school.mcp_server import QueryServices, build_server
-from school.spi import DriverRegistry
+from school.spi import DriverRegistry, SourceDriver
+from school.vault import Vault, VaultCredentials
 from school.store import (
     ConnectionFactory,
     DriverRepository,
@@ -103,6 +111,44 @@ def _read_deck_registry(path: str) -> tuple[DeckConfig, ...]:
         raise ConfigError(f"SCHOOL_DECK_REGISTRY ({path}): {exc}") from exc
 
 
+def _classroom_driver(
+    config: AppConfig, clock_fn: Callable[[], datetime]
+) -> ClassroomWebDriver:
+    """Wire the Classroom driver (M6) from its optional config.
+
+    Called only when ``config.classroom_configured``. The vault is
+    unlocked here — first unlock creates the key/vault in the vault
+    dir, matching how the composition root owns deployment-time I/O
+    (the DB migration above does the same). The browser itself stays
+    lazy: the session factory builds a ClassroomSession per scrape
+    and Chromium starts on first probe.
+    """
+    profile_dir = config.classroom_profile_dir
+    account = config.classroom_account
+    if not profile_dir or not account:
+        raise ConfigError(
+            "classroom driver needs both SCHOOL_CLASSROOM_PROFILE_DIR "
+            "and SCHOOL_CLASSROOM_ACCOUNT"
+        )
+    credentials: VaultCredentials | None = None
+    if config.vault_dir:
+        vault = Vault(
+            vault_path=Path(config.vault_dir) / "vault.json",
+            key_path=Path(config.vault_dir) / "vault.key",
+        )
+        vault.unlock()
+        credentials = VaultCredentials(vault)
+    profile = ProfileConfig(profile_dir=Path(profile_dir))
+    return ClassroomWebDriver(
+        session_factory=lambda: ClassroomSession(profile),
+        credentials=credentials,
+        student=ClassroomStudentConfig(
+            account_id=account, expected_email=account
+        ),
+        clock=clock_fn,
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class App:
     """The wired object graph, as one immutable value."""
@@ -144,25 +190,28 @@ def build_app(
         id=config.student_id, display_name=config.student_name
     )
     decks = _read_deck_registry(config.deck_registry_path)
-    registry = DriverRegistry(
-        {
-            SourceKind.HAC: HacDriver(
-                HacCacheAdapter(
-                    path_provider=lambda: Path(config.hac_cache_path),
-                    clock=clock_fn,
-                    student=student,
-                )
-            ),
-            SourceKind.TEAM_SITE: TeamSiteDriver(
-                hub_url=config.team_site_url, fetcher=fetch
-            ),
-            SourceKind.AGENDA: AgendaDriver(
-                fetcher=fetch,
-                decks=decks,
-                parsers=default_parser_registry(),
-            ),
-        }
-    )
+    drivers: dict[SourceKind, SourceDriver] = {
+        SourceKind.HAC: HacDriver(
+            HacCacheAdapter(
+                path_provider=lambda: Path(config.hac_cache_path),
+                clock=clock_fn,
+                student=student,
+            )
+        ),
+        SourceKind.TEAM_SITE: TeamSiteDriver(
+            hub_url=config.team_site_url, fetcher=fetch
+        ),
+        SourceKind.AGENDA: AgendaDriver(
+            fetcher=fetch,
+            decks=decks,
+            parsers=default_parser_registry(),
+        ),
+    }
+    if config.classroom_configured:
+        drivers[SourceKind.CLASSROOM_WEB] = _classroom_driver(
+            config, clock_fn
+        )
+    registry = DriverRegistry(drivers)
     services = QueryServices(
         drivers=driver_repository,
         resources=resource_repository,
