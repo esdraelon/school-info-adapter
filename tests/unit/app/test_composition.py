@@ -18,7 +18,8 @@ import pytest
 
 from school.app.composition import build_app, load_deck_configs
 from school.app.config import AppConfig, ConfigError
-from school.domain import Found, SourceKind, StudentRef
+from school.domain import Found, ItemStatus, SourceKind, StudentRef
+from school.spi import ScrapeContext
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WEB_FIXTURES = REPO_ROOT / "tests" / "unit" / "driver_web" / "fixtures"
@@ -145,6 +146,35 @@ def test_build_app_migrates_the_database_at_build_time(
         }
     assert versions == [1]
     assert {"drivers", "resources", "source_runs"} <= tables
+
+
+def test_build_app_threads_the_configured_timezone_into_the_hac_driver(
+    app_config: AppConfig,
+) -> None:
+    """M7 FIX 2, wired end to end: 2026-10-21T01:30Z is 20:30 CDT on
+    10-20, so the school-zone reference date is 10-20 and the
+    unscored Vocabulary Quiz 4 (due 10/20) is not yet MISSING; with
+    SCHOOL_TIMEZONE=UTC the reference date is 10-21 and it is."""
+    instant = datetime(2026, 10, 21, 1, 30, tzinfo=timezone.utc)
+
+    def quiz_status(config: AppConfig) -> ItemStatus:
+        app = build_app(config, fetcher=never_fetch, clock=lambda: FIXED)
+        driver = app.registry.driver_for(SourceKind.HAC).unwrap()
+        result = driver.scrape(
+            ScrapeContext(student=app.student, now=instant)
+        )
+        quiz = next(
+            record
+            for record in result.drivers
+            if record.title == "Vocabulary Quiz 4"
+        )
+        return quiz.status
+
+    assert quiz_status(app_config) is ItemStatus.ASSIGNED
+    assert (
+        quiz_status(replace(app_config, timezone_name="UTC"))
+        is ItemStatus.MISSING
+    )
 
 
 def test_build_app_names_a_missing_deck_registry(

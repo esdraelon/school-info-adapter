@@ -196,7 +196,8 @@ def build_app(
                 path_provider=lambda: Path(config.hac_cache_path),
                 clock=clock_fn,
                 student=student,
-            )
+            ),
+            timezone_name=config.timezone_name,
         ),
         SourceKind.TEAM_SITE: TeamSiteDriver(
             hub_url=config.team_site_url, fetcher=fetch

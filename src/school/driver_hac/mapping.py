@@ -5,7 +5,9 @@ This module is the ONLY place in the driver that touches raw cache dicts:
 if the real cache's shape drifts, this file changes and nothing else
 does. Everything here is a pure function — no I/O, no wall clock — so
 the whole layer is table-testable; the reference date for status
-derivation is injected by the caller (the driver's ScrapeContext.now).
+derivation is injected by the caller (the driver derives it from
+ScrapeContext.now read in the configured school timezone — HAC due
+dates are school-local, M7).
 
 Real cache schema (verified 2026-10-22 against
 ``/var/www/haliffer/grades-cache/cache/sam_classwork_cache.json`` on

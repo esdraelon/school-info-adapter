@@ -73,9 +73,31 @@ class Vault:
 
     def unlock(self) -> None:
         """Load (or create) the key and vault; ``VaultError`` on any
-        sign the files are corrupt or the key does not fit the vault."""
+        sign the files are corrupt or the key does not fit the vault.
+
+        Note: loading checks structure only — a wrong key loads fine
+        and fails later at ``get``. Callers that must know at startup
+        that the key fits (the composition root does) call
+        :meth:`verify` right after unlocking."""
         self._key = self._load_or_create_key()
         self._entries = self._load_entries()
+
+    def verify(self) -> None:
+        """Decrypt every entry; ``VaultError`` naming the first that
+        fails. The boot-time proof that the configured key actually
+        fits this vault — an empty vault verifies trivially (there is
+        nothing a wrong key could be wrong about yet)."""
+        key = self._require_key()
+        for name, entry in self._entries.items():
+            try:
+                AESGCM(key).decrypt(
+                    entry.nonce, entry.ciphertext, name.encode("utf-8")
+                )
+            except InvalidTag as exc:
+                raise VaultError(
+                    f"vault entry {name!r} failed authentication "
+                    "(tampered contents or wrong key)"
+                ) from exc
 
     # -- operations ---------------------------------------------------
 

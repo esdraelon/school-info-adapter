@@ -1,9 +1,13 @@
 """HacDriver: the SourceDriver strategy's outcomes and staleness surface."""
 
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfoNotFoundError
 
-from school.domain import RunOutcome, SourceKind, StudentRef
+import pytest
+
+from school.domain import ItemStatus, RunOutcome, SourceKind, StudentRef
 from school.driver_hac import HacDriver
 from school.spi import DriverRegistry, ScrapeContext, SourceDriver
 from driver_hac.conftest import (
@@ -11,6 +15,7 @@ from driver_hac.conftest import (
     FINISH,
     NOW,
     SAM,
+    make_adapter,
     make_driver,
     stage_cache,
 )
@@ -108,6 +113,79 @@ def test_cache_age_against_context_clock(tmp_path: Path) -> None:
 def test_cache_age_unknown_when_file_missing(tmp_path: Path) -> None:
     driver = make_driver(tmp_path / "does-not-exist.json")
     assert driver.cache_age(_context()) is None
+
+
+def _evening_cache(tmp_path: Path) -> Path:
+    """A one-item cache: an unscored worksheet due 10/22/2026."""
+    payload = {
+        "courses": [
+            {
+                "name": "1801 - 1    Language Arts 8",
+                "assignments": [
+                    {
+                        "name": "Evening Worksheet",
+                        "category": "Daily Work",
+                        "date_assigned": "10/21/2026",
+                        "date_due": "10/22/2026",
+                        "max_points": 100.0,
+                        "score": None,
+                        "notes": "",
+                    }
+                ],
+            }
+        ]
+    }
+    path = tmp_path / "cache_evening.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _status_at(driver: HacDriver, instant: datetime) -> ItemStatus:
+    result = driver.scrape(ScrapeContext(student=SAM, now=instant))
+    (record,) = result.drivers
+    return record.status
+
+
+def test_due_today_stays_assigned_through_the_school_evening(
+    tmp_path: Path,
+) -> None:
+    """M7 FIX 2: 2026-10-23T01:30Z is 20:30 CDT on 10-22. A UTC
+    reference date (10-23) would flip the item due 10/22 to MISSING
+    five hours before the school day ends; the school timezone's
+    reference date (10-22) keeps it ASSIGNED."""
+    driver = HacDriver(make_adapter(_evening_cache(tmp_path)))
+    instant = datetime(2026, 10, 23, 1, 30, tzinfo=timezone.utc)
+    assert _status_at(driver, instant) is ItemStatus.ASSIGNED
+
+
+def test_due_item_flips_only_after_school_midnight(
+    tmp_path: Path,
+) -> None:
+    """2026-10-23T05:30Z is 00:30 CDT on 10-23: now the reference
+    date (10-23) is past the 10/22 due date."""
+    driver = HacDriver(make_adapter(_evening_cache(tmp_path)))
+    instant = datetime(2026, 10, 23, 5, 30, tzinfo=timezone.utc)
+    assert _status_at(driver, instant) is ItemStatus.MISSING
+
+
+def test_explicit_utc_timezone_keeps_the_utc_reference_date(
+    tmp_path: Path,
+) -> None:
+    """The reference instant is explicit: with timezone_name="UTC"
+    the same 01:30Z scrape derives against 10-23."""
+    driver = HacDriver(
+        make_adapter(_evening_cache(tmp_path)), timezone_name="UTC"
+    )
+    instant = datetime(2026, 10, 23, 1, 30, tzinfo=timezone.utc)
+    assert _status_at(driver, instant) is ItemStatus.MISSING
+
+
+def test_unknown_timezone_fails_at_construction(tmp_path: Path) -> None:
+    with pytest.raises(ZoneInfoNotFoundError):
+        HacDriver(
+            make_adapter(_evening_cache(tmp_path)),
+            timezone_name="Mars/Olympus_Mons",
+        )
 
 
 def test_driver_runs_through_the_registry(tmp_path: Path) -> None:

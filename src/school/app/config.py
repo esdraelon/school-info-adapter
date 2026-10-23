@@ -13,6 +13,7 @@ to a plausible-looking default.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from school.domain import SourceKind
 
@@ -27,6 +28,9 @@ DEFAULT_PORT = 8765
 DEFAULT_STALE_HAC_HOURS = 30.0
 DEFAULT_STALE_WEB_HOURS = 192.0
 DEFAULT_STALE_CLASSROOM_HOURS = 30.0
+#: The school's timezone: HAC due dates are school-local, and the HAC
+#: driver's status derivation reads "today" in this zone (M7).
+DEFAULT_TIMEZONE = "America/Chicago"
 
 
 class ConfigError(Exception):
@@ -43,6 +47,7 @@ class AppConfig:
     deck_registry_path: str
     student_id: str = DEFAULT_STUDENT_ID
     student_name: str = DEFAULT_STUDENT_NAME
+    timezone_name: str = DEFAULT_TIMEZONE
     team_site_url: str = DEFAULT_TEAM_SITE_URL
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
@@ -100,6 +105,17 @@ def _optional_value(env: Mapping[str, str], name: str) -> str | None:
     return value if value.strip() else None
 
 
+def _timezone_name(env: Mapping[str, str]) -> str:
+    name = _optional_string(env, "SCHOOL_TIMEZONE", DEFAULT_TIMEZONE)
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError(
+            f"SCHOOL_TIMEZONE must be an IANA timezone name, got {name!r}"
+        ) from None
+    return name
+
+
 def _port(env: Mapping[str, str]) -> int:
     raw = env.get("SCHOOL_PORT", "")
     if not raw.strip():
@@ -134,7 +150,9 @@ def config_from_env(env: Mapping[str, str]) -> AppConfig:
     """Build an AppConfig from environment variables (see module doc).
 
     Required: SCHOOL_DB_PATH, SCHOOL_HAC_CACHE_PATH, SCHOOL_MCP_TOKEN,
-    SCHOOL_DECK_REGISTRY. Everything else has a production default.
+    SCHOOL_DECK_REGISTRY. Everything else has a production default —
+    including SCHOOL_TIMEZONE (America/Chicago), the school-local zone
+    the HAC driver derives due-relative statuses against.
     The Classroom keys are optional as a set: SCHOOL_CLASSROOM_PROFILE_DIR
     + SCHOOL_CLASSROOM_ACCOUNT enable the driver (SCHOOL_VAULT_DIR adds
     vault-backed re-auth); absent keys leave it unconfigured.
@@ -150,6 +168,7 @@ def config_from_env(env: Mapping[str, str]) -> AppConfig:
         student_name=_optional_string(
             env, "SCHOOL_STUDENT_NAME", DEFAULT_STUDENT_NAME
         ),
+        timezone_name=_timezone_name(env),
         team_site_url=_optional_string(
             env, "SCHOOL_TEAM_SITE_URL", DEFAULT_TEAM_SITE_URL
         ),

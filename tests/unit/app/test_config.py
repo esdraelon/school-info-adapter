@@ -108,6 +108,21 @@ def test_invalid_staleness_hours_name_the_variable(
         config_from_env(env)
 
 
+def test_timezone_defaults_to_the_school_zone() -> None:
+    assert config_from_env(BASE_ENV).timezone_name == "America/Chicago"
+
+
+def test_timezone_override_is_accepted() -> None:
+    env = dict(BASE_ENV, SCHOOL_TIMEZONE="America/New_York")
+    assert config_from_env(env).timezone_name == "America/New_York"
+
+
+def test_unknown_timezone_names_school_timezone() -> None:
+    env = dict(BASE_ENV, SCHOOL_TIMEZONE="Mars/Olympus_Mons")
+    with pytest.raises(ConfigError, match="SCHOOL_TIMEZONE"):
+        config_from_env(env)
+
+
 def test_stale_thresholds_map_web_kinds_to_the_web_budget() -> None:
     env = dict(
         BASE_ENV, SCHOOL_STALE_HAC_HOURS="10", SCHOOL_STALE_WEB_HOURS="99"

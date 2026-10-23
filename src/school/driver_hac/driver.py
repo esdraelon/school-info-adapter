@@ -14,14 +14,27 @@ into a ScrapeResult with the right run outcome:
 Staleness (C10) surfaces two ways: every record carries the cache
 file's mtime as its scraped_at, and ``cache_age`` exposes that mtime
 against the caller's clock for health checks without a full scrape.
+
+Status derivation is due-relative, and HAC due dates are school-local
+(America/Chicago by default): the mapping layer's reference date is
+the scrape instant read in the configured school timezone, NOT its
+UTC date — with a UTC reference an unscored item would flip to
+MISSING at 19:00 local, five hours before the school day ends (M7
+fix; the timezone is threaded from the composition root's
+``SCHOOL_TIMEZONE`` config).
 """
 
 from dataclasses import dataclass, replace
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from school.domain import DriverRecord, RunOutcome, SourceKind, SourceRun
 from school.driver_hac.adapter import CacheLoadError, CacheSnapshot, HacCacheAdapter
 from school.spi import ScrapeContext, ScrapeResult, pipe
+
+#: The school's timezone when none is configured: HAC due dates are
+#: Leander ISD local dates.
+DEFAULT_TIMEZONE_NAME = "America/Chicago"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,8 +49,16 @@ class _ScrapeState:
 class HacDriver:
     """SourceDriver strategy over the grades-MCP cache (via the adapter)."""
 
-    def __init__(self, adapter: HacCacheAdapter) -> None:
+    def __init__(
+        self,
+        adapter: HacCacheAdapter,
+        *,
+        timezone_name: str = DEFAULT_TIMEZONE_NAME,
+    ) -> None:
         self._adapter = adapter
+        # Resolved eagerly: an unknown timezone name fails at wiring
+        # time (ZoneInfoNotFoundError), never mid-scrape.
+        self._timezone = ZoneInfo(timezone_name)
 
     @property
     def kind(self) -> SourceKind:
@@ -69,13 +90,15 @@ class HacDriver:
     def _load(self, state: _ScrapeState) -> _ScrapeState:
         """Pipeline stage: read+map the cache, capturing any failure.
 
-        The context's calendar date is the mapping layer's reference
-        date for due-relative status derivation (HAC's only missing
-        signal) — the caller's clock, never a wall-clock read.
+        The reference date for due-relative status derivation (HAC's
+        only missing signal) is the context instant read in the
+        school timezone — the caller's clock, never a wall-clock read.
         """
         try:
             snapshot = self._adapter.load(
-                reference_date=state.context.now.date()
+                reference_date=state.context.now.astimezone(
+                    self._timezone
+                ).date()
             )
         except CacheLoadError as exc:
             return replace(state, error=str(exc))
