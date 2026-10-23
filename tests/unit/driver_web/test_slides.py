@@ -59,7 +59,28 @@ def test_decode_js_string_escapes() -> None:
     assert decode_js_string(r"https:\/\/x\/y") == "https://x/y"
     assert decode_js_string(r"it\'s") == "it's"
     assert decode_js_string(r"a\\b") == "a\\b"
-    assert decode_js_string("caf\u2019e") == "caf\u2019e"
+    assert decode_js_string(r"caf\u2019e") == "caf\u2019e"
+    assert decode_js_string(r"line\nbreak") == "line\nbreak"
+
+
+def test_nested_groups_and_rectless_paths() -> None:
+    page = (
+        "<script>SK_svgData = '"
+        "\\x3csvg\\x3e"
+        "\\x3cg role=\\x22img\\x22 aria-label=\\x22Outer\\x22\\x3e"
+        "\\x3cg\\x3e\\x3cpath d=\\x22m0 0l0 10l20 0l0 -10z\\x22/\\x3e"
+        "\\x3c/g\\x3e\\x3c/g\\x3e"
+        "\\x3cg role=\\x22img\\x22 aria-label=\\x22NoRect\\x22\\x3e"
+        "\\x3cpath d=\\x22M5 5 L9 9\\x22/\\x3e\\x3c/g\\x3e"
+        "\\x3c/svg\\x3e';</script>"
+    )
+    slides = extract_slide_alts(page)
+    assert len(slides) == 1
+    texts = slides[0].texts
+    assert [t.text for t in texts] == ["Outer", "NoRect"]
+    assert texts[0].rect is not None
+    assert texts[0].rect.width == 20
+    assert texts[1].rect is None
 
 
 def test_unwrap_url_passthrough() -> None:

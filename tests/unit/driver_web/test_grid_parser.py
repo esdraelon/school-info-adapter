@@ -12,7 +12,13 @@ from school.domain import (
 )
 from school.driver_web.grid_parser import WeeklyGridParser
 from school.driver_web.parsers import DeckParserRegistry, kind_for_text
-from school.driver_web.slides import SlideAlt, extract_slide_alts
+from school.driver_web.slides import (
+    Rect,
+    SlideAlt,
+    SlideLink,
+    SlideText,
+    extract_slide_alts,
+)
 from driver_web.conftest import MATH_DECK_URL, NOW, SAM, fixture_text
 
 REFERENCE = date(2026, 10, 22)
@@ -132,6 +138,106 @@ def test_slide_without_headers_is_skipped() -> None:
     )
     assert result.week_monday is None
     assert result.drivers == ()
+
+
+def _rect(x: float, y: float) -> Rect:
+    return Rect(x=x, y=y, width=180.0, height=40.0)
+
+
+def _headers() -> list[SlideText]:
+    names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    return [
+        SlideText(text=f"{name} 10/{19 + i}", rect=_rect(i * 192 + 6, 58))
+        for i, name in enumerate(names)
+    ]
+
+
+def _synthetic_parse(slide: SlideAlt):
+    return WeeklyGridParser().parse_slide(
+        slide,
+        course=MATH,
+        student=SAM,
+        source_kind=SourceKind.AGENDA,
+        source_url=MATH_DECK_URL,
+        scraped_at=NOW,
+        reference=REFERENCE,
+    )
+
+
+def test_synthetic_empty_columns_and_rectless_blocks() -> None:
+    slide = SlideAlt(
+        texts=tuple(
+            _headers()
+            + [
+                SlideText(text="Only Monday topic", rect=_rect(6, 108)),
+                SlideText(text="Ghost block", rect=None),
+            ]
+        ),
+        links=(),
+    )
+    result = _synthetic_parse(slide)
+    assert result.week_monday == date(2026, 10, 19)
+    assert [d.title for d in result.drivers] == ["Only Monday topic"]
+
+
+def test_synthetic_orphan_link_surfaces_at_course_level() -> None:
+    slide = SlideAlt(
+        texts=tuple(
+            _headers()
+            + [SlideText(text="Topic A", rect=_rect(6, 108))]
+        ),
+        links=(
+            SlideLink(
+                url="https://example.com/far",
+                label="Far away",
+                rect=Rect(x=5000.0, y=300.0, width=10.0, height=10.0),
+            ),
+        ),
+    )
+    result = _synthetic_parse(slide)
+    assert len(result.resources) == 1
+    orphan = result.resources[0]
+    assert orphan.kind is ResourceKind.LINK
+    assert orphan.title == "Far away"
+    assert orphan.course == MATH
+
+
+def test_synthetic_extra_blocks_fold_into_practice() -> None:
+    wed = 2 * 192 + 6
+    slide = SlideAlt(
+        texts=tuple(
+            _headers()
+            + [
+                SlideText(text="Wed topic", rect=_rect(wed, 108)),
+                SlideText(text="Practice one", rect=_rect(wed, 318)),
+                SlideText(text="Practice two", rect=_rect(wed, 400)),
+            ]
+        ),
+        links=(),
+    )
+    result = _synthetic_parse(slide)
+    titles = [d.title for d in result.drivers]
+    assert "Wed topic" in titles
+    folded = next(t for t in titles if "Practice one" in t)
+    assert "Practice two" in folded
+
+
+def test_synthetic_notes_line_without_link_is_dropped() -> None:
+    slide = SlideAlt(
+        texts=tuple(
+            _headers()
+            + [
+                SlideText(
+                    text="Topic B\nNotes: Unlinked notes",
+                    rect=_rect(6, 108),
+                )
+            ]
+        ),
+        links=(),
+    )
+    result = _synthetic_parse(slide)
+    assert [d.title for d in result.drivers] == ["Topic B"]
+    assert result.resources == ()
 
 
 def test_kind_for_text_rule_table() -> None:

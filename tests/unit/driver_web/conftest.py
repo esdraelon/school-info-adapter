@@ -65,3 +65,22 @@ def make_fetcher(pages: dict[str, str]) -> Fetcher:
 
 def failing_fetcher(url: str) -> str:
     raise FetchError(f"cannot fetch {url}: boom")
+
+
+def make_page(*svgs: str) -> str:
+    """Wrap raw SVG strings in the pub page's SK_svgData script format
+    (same JS-string escaping the real pages use), for synthetic pages."""
+
+    def escape(svg: str) -> str:
+        return (
+            svg.replace("\\", "\\\\")
+            .replace("<", "\\x3c")
+            .replace(">", "\\x3e")
+            .replace('"', "\\x22")
+            .replace("&", "\\x26")
+            .replace("/", "\\/")
+        )
+
+    return "".join(
+        f"<script>SK_svgData = '{escape(svg)}';</script>" for svg in svgs
+    )

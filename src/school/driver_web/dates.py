@@ -23,13 +23,20 @@ WEEKDAYS = (
 
 
 def infer_year(month: int, day: int, *, reference: date) -> date:
-    """The date for (month, day) in the year closest to ``reference``."""
+    """The date for (month, day) in the year closest to ``reference``.
+
+    Falls back to ``reference`` itself when no candidate year yields a
+    valid date (Feb 29 with no leap year in range) — a malformed deck
+    date must degrade, never crash a scrape.
+    """
     candidates: list[date] = []
     for year in (reference.year - 1, reference.year, reference.year + 1):
         try:
             candidates.append(date(year, month, day))
         except ValueError:  # e.g. Feb 29 in a non-leap year
             continue
+    if not candidates:
+        return reference
     return min(candidates, key=lambda c: abs((c - reference).days))
 
 

@@ -40,7 +40,8 @@ def fetch_url(
     try:
         with urlopen(request, timeout=timeout) as response:
             charset = response.headers.get_content_charset() or "utf-8"
-            return response.read().decode(charset, errors="replace")
+            raw: bytes = response.read()
+            return raw.decode(charset, errors="replace")
     except (URLError, OSError) as exc:
         raise FetchError(f"cannot fetch {url}: {exc}") from exc
 

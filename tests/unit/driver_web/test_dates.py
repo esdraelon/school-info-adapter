@@ -25,6 +25,16 @@ def test_infer_year_picks_closest_year() -> None:
     assert infer_year(8, 24, reference=date(2027, 5, 1)) == date(2027, 8, 24)
 
 
+def test_infer_year_leap_day_edges() -> None:
+    # Feb 29 resolves to the leap year in range when there is one.
+    assert infer_year(2, 29, reference=date(2027, 6, 1)) \
+        == date(2028, 2, 29)
+    # With no leap year in range it degrades to the reference, not a
+    # crash (2025/2026/2027 are all non-leap).
+    assert infer_year(2, 29, reference=date(2026, 6, 1)) \
+        == date(2026, 6, 1)
+
+
 def test_first_md() -> None:
     assert first_md("Page 8 (due 10/21)", reference=REFERENCE) \
         == date(2026, 10, 21)
