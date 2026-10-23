@@ -72,6 +72,19 @@ class TestParseDueText:
         assert parse.due_at is None
         assert parse.posted_on is None
 
+    def test_unknown_weekday_and_month_degrade_to_no_due(self) -> None:
+        assert (
+            parse_due_text("Funday, 9:00 AM", reference=REFERENCE).due_at
+            is None
+        )
+        assert (
+            parse_due_text("Friday, Xyz 12", reference=REFERENCE).due_at
+            is None
+        )
+        posted = parse_due_text("Posted Friday, Xyz 12", reference=REFERENCE)
+        assert posted.due_at is None
+        assert posted.posted_on is None
+
     def test_noon_and_midnight_edges(self) -> None:
         parse = parse_due_text("Today, 12:00 PM", reference=REFERENCE)
         assert parse.due_at == at(date(2026, 10, 22), time(12, 0))

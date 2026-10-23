@@ -279,3 +279,70 @@ def test_probe_failure_is_a_run_failure() -> None:
     assert result.run.message is not None
     assert "probe failed" in result.run.message
     assert session.closed is True
+
+
+def test_close_failure_does_not_sink_the_run() -> None:
+    session = FakeSession(
+        pages=_pages(), close_error=RuntimeError("context already gone")
+    )
+    result = _driver(lambda: session).scrape(CONTEXT)
+    assert result.run.outcome is RunOutcome.SUCCESS
+    assert session.closed is True
+
+
+def test_probe_failure_after_successful_reauth(
+    credentials: VaultCredentials,
+) -> None:
+    session = FakeSession(
+        probe_states=[SessionState.EXPIRED],
+        pages=_pages(),
+        fail_second_probe=True,
+    )
+    session.script_sign_in(after_password="todo")
+    result = _driver(lambda: session, credentials=credentials).scrape(CONTEXT)
+    assert result.run.outcome is RunOutcome.FAILURE
+    assert result.run.message is not None
+    assert "after re-auth" in result.run.message
+
+
+def test_reauth_attempt_error_is_a_run_failure(
+    credentials: VaultCredentials,
+) -> None:
+    session = FakeSession(
+        probe_states=[SessionState.EXPIRED],
+        sign_in_error=RuntimeError("page detached"),
+    )
+    result = _driver(lambda: session, credentials=credentials).scrape(CONTEXT)
+    assert result.run.outcome is RunOutcome.FAILURE
+    assert result.run.message is not None
+    assert RELOGIN_MESSAGE in result.run.message
+    assert "errored" in result.run.message
+
+
+def test_tampered_vault_is_a_distinct_run_failure(tmp_path: Path) -> None:
+    import base64
+    import json
+
+    vault_path = tmp_path / "vault.json"
+    vault = Vault(vault_path=vault_path, key_path=tmp_path / "vault.key")
+    vault.unlock()
+    vault.put(f"{ACCOUNT}.username", ACCOUNT)
+    vault.put(f"{ACCOUNT}.password", "pw-123")
+    payload = json.loads(vault_path.read_text(encoding="utf-8"))
+    raw = bytearray(
+        base64.b64decode(payload["entries"][f"{ACCOUNT}.password"]["ciphertext"])
+    )
+    raw[0] ^= 0xFF
+    payload["entries"][f"{ACCOUNT}.password"]["ciphertext"] = (
+        base64.b64encode(bytes(raw)).decode()
+    )
+    vault_path.write_text(json.dumps(payload), encoding="utf-8")
+    fresh = Vault(vault_path=vault_path, key_path=tmp_path / "vault.key")
+    fresh.unlock()
+
+    session = FakeSession(probe_states=[SessionState.EXPIRED])
+    driver = _driver(lambda: session, credentials=VaultCredentials(fresh))
+    result = driver.scrape(CONTEXT)
+    assert result.run.outcome is RunOutcome.FAILURE
+    assert result.run.message is not None
+    assert "credential vault error" in result.run.message

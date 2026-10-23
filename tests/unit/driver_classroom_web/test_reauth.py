@@ -87,3 +87,13 @@ def test_password_first_page_skips_the_email_step() -> None:
     outcome = HELPER.attempt(page, username="sam@example.test", password="pw")
     assert outcome is ReauthOutcome.SIGNED_IN
     assert page.mutations == ["fill_password", "advance"]
+
+
+def test_page_already_at_todo_is_signed_in_without_touching_it() -> None:
+    page = FakeSignInPage(after_password="todo")
+    page.advance()  # walk the fake to its signed-in end state
+    page.advance()
+    page.mutations.clear()
+    outcome = HELPER.attempt(page, username="sam@example.test", password="pw")
+    assert outcome is ReauthOutcome.SIGNED_IN
+    assert page.mutations == []

@@ -87,6 +87,12 @@ def test_open_todo_navigates_to_the_tab_url() -> None:
     assert page is adapter.todo_page()
 
 
+def test_sign_in_page_comes_from_the_adapter() -> None:
+    adapter = FakePageAdapter()
+    session = _session(adapter)
+    assert session.sign_in_page() is adapter.sign_in_page()
+
+
 def test_base_url_override_drives_navigation() -> None:
     config = ProfileConfig(
         profile_dir=Path("/tmp/profile"), base_url="http://127.0.0.1:9999"

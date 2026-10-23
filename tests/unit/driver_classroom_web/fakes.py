@@ -199,12 +199,18 @@ class FakeSession:
         sign_in_page: FakeSignInPage | None = None,
         probe_error: Exception | None = None,
         open_errors: dict[TodoTab, Exception] | None = None,
+        sign_in_error: Exception | None = None,
+        close_error: Exception | None = None,
+        fail_second_probe: bool = False,
     ) -> None:
         self._probe_states = probe_states or [SessionState.AUTHENTICATED]
         self._pages = pages or {}
         self._sign_in_page = sign_in_page or FakeSignInPage()
         self._probe_error = probe_error
         self._open_errors = open_errors or {}
+        self._sign_in_error = sign_in_error
+        self._close_error = close_error
+        self._fail_second_probe = fail_second_probe
         self.last_probe_detail = "fake probe detail"
         self.probe_calls = 0
         self.opened_tabs: list[TodoTab] = []
@@ -228,6 +234,8 @@ class FakeSession:
         self.probe_calls += 1
         if self._probe_error is not None:
             raise self._probe_error
+        if self._fail_second_probe and self.probe_calls == 2:
+            raise RuntimeError("browser died on re-probe")
         if len(self._probe_states) > 1:
             return self._probe_states.pop(0)
         return self._probe_states[0]
@@ -241,7 +249,11 @@ class FakeSession:
         return self._pages[tab]
 
     def sign_in_page(self) -> FakeSignInPage:
+        if self._sign_in_error is not None:
+            raise self._sign_in_error
         return self._sign_in_page
 
     def close(self) -> None:
         self.closed = True
+        if self._close_error is not None:
+            raise self._close_error
