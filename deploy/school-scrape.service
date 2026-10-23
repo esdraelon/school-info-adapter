@@ -1,0 +1,15 @@
+# School Information Adapter — one scrape pass (M5 deploy artifact).
+# Install with school-scrape.timer under /etc/systemd/system/ on hal9k.
+# The scrape CLI runs inside the school-mcp container so it uses the
+# container's environment, mounts, and code — the host needs no Python.
+[Unit]
+Description=School Information Adapter scrape pass
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec haliffer-school-mcp python -m school.app scrape
+
+[Install]
+WantedBy=multi-user.target

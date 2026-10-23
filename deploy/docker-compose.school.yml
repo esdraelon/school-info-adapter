@@ -1,0 +1,29 @@
+# School Information Adapter on hal9k — M5 deploy artifact (files only;
+# the deploy itself is a separate human-checked step, see README.md).
+#
+# Placement (on hal9k): a directory holding this file, a production
+# deck_registry.json, a data/ directory, and a .env with
+# SCHOOL_MCP_TOKEN set. The build context is the repo checkout.
+services:
+  school-mcp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: haliffer-school-mcp
+    container_name: haliffer-school-mcp
+    restart: unless-stopped
+    environment:
+      SCHOOL_DB_PATH: /data/school.db
+      # Inside the read-only grades-cache mount below: the cache file
+      # the grades MCP maintains. The school app only ever reads it.
+      SCHOOL_HAC_CACHE_PATH: /grades-cache/cache/sam_classwork_cache.json
+      SCHOOL_DECK_REGISTRY: /config/deck_registry.json
+      SCHOOL_MCP_TOKEN: ${SCHOOL_MCP_TOKEN:?set SCHOOL_MCP_TOKEN in .env}
+    ports:
+      # Localhost only — the haliffer.ululuth.com gateway nginx is the
+      # public surface (see nginx-school.conf.snippet).
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - /var/www/haliffer/grades-cache:/grades-cache:ro
+      - ./data:/data
+      - ./deck_registry.json:/config/deck_registry.json:ro

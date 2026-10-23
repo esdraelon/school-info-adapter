@@ -1,0 +1,16 @@
+# School Information Adapter — scrape cadence (M5 deploy artifact).
+# Every 6 hours at :15 (00:15, 06:15, 12:15, 18:15 local). Rationale:
+# HAC's cache refreshes on school-day cadence and the digest reads at
+# ~18:00, so 6h keeps worst-case HAC staleness well inside the 30h
+# budget while the weekly web decks cost nothing to re-check; :15
+# avoids colliding with the grades scraper's own schedule.
+[Unit]
+Description=Run the school scrape pass every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00
+Persistent=true
+Unit=school-scrape.service
+
+[Install]
+WantedBy=timers.target

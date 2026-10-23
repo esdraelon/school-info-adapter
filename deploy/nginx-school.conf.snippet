@@ -1,0 +1,18 @@
+# School Information Adapter MCP — nginx SNIPPET (M5 deploy artifact).
+# Merge into the haliffer.ululuth.com server block in
+# /etc/nginx/sites-enabled/haliffer.ululuth.com.conf at deploy time,
+# then: nginx -t && systemctl reload nginx.
+# Mirrors the existing /mcp/grades/ block: the gateway path is mapped
+# onto the app's own /mcp/ mount, and the app enforces the bearer
+# token itself (the gateway presents SCHOOL_MCP_TOKEN).
+location /mcp/school/ {
+    proxy_pass http://127.0.0.1:8765/mcp/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization $http_authorization;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+}
