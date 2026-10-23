@@ -120,6 +120,40 @@ def test_wrong_key_raises_vault_error(tmp_path: Path) -> None:
         impostor.get("acct.password")
 
 
+def test_verify_passes_for_a_healthy_vault(vault: Vault) -> None:
+    vault.put("acct.password", PASSWORD)
+    vault.verify()  # must not raise
+
+
+def test_verify_on_an_empty_vault_passes(vault: Vault) -> None:
+    vault.verify()  # nothing a wrong key could be wrong about yet
+
+
+def test_verify_raises_for_a_wrong_key(tmp_path: Path) -> None:
+    """M7 D4 enabler: verify() is the boot-time decrypt-everything
+    probe — where get() fails per-read, verify fails up front."""
+    vault = Vault(
+        vault_path=tmp_path / "vault.json", key_path=tmp_path / "vault.key"
+    )
+    vault.unlock()
+    vault.put("acct.password", PASSWORD)
+    (tmp_path / "other.key").write_bytes(os.urandom(32))
+    impostor = Vault(
+        vault_path=tmp_path / "vault.json", key_path=tmp_path / "other.key"
+    )
+    impostor.unlock()  # structure is fine; only decryption can tell
+    with pytest.raises(VaultError, match="authentication"):
+        impostor.verify()
+
+
+def test_verify_before_unlock_raises(tmp_path: Path) -> None:
+    vault = Vault(
+        vault_path=tmp_path / "vault.json", key_path=tmp_path / "vault.key"
+    )
+    with pytest.raises(VaultError, match="unlock"):
+        vault.verify()
+
+
 def test_ciphertext_cannot_move_between_entries(
     vault: Vault, tmp_path: Path
 ) -> None:

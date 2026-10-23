@@ -17,7 +17,10 @@ to a different entry name fails authentication too.
 
 Failure posture: a wrong key, a tampered ciphertext, or a corrupt
 vault file raises ``VaultError`` — never a silent empty result. Reads
-of absent names are not errors: they return ``Missing`` (C1).
+of absent names are not errors: they return ``Missing`` (C1). Because
+``unlock`` validates structure only, ``verify()`` is the explicit
+decrypt-everything probe a composition root runs at boot so a swapped
+key fails the build loudly instead of surfacing mid-scrape (M7).
 """
 
 import base64

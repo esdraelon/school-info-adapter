@@ -137,6 +137,12 @@ def _classroom_driver(
             key_path=Path(config.vault_dir) / "vault.key",
         )
         vault.unlock()
+        # Boot must fail LOUD on a swapped/wrong vault key: unlock
+        # checks structure only, so prove the key fits by decrypting
+        # every entry now (M7 drill D4) — a VaultError here aborts
+        # the build with the entry named, instead of the driver
+        # silently carrying credentials it can never read.
+        vault.verify()
         credentials = VaultCredentials(vault)
     profile = ProfileConfig(profile_dir=Path(profile_dir))
     return ClassroomWebDriver(
