@@ -23,7 +23,9 @@ agent session with deploy approval).
    (the M3 discovery format — start from
    `tests/unit/driver_web/fixtures/deck_registry.json`), an empty
    `data/` directory, and a `.env` containing `SCHOOL_MCP_TOKEN`
-   (the gateway bearer token value; never commit it).
+   (the app's OWN bearer token — generate a fresh random one; never
+   commit it). Note: the `data/` directory must be writable by the
+   container user (uid 10001) or SQLite cannot create the database.
 2. **Build the image.** From the checkout root:
    `docker build -f deploy/Dockerfile -t haliffer-school-mcp .`
 3. **Start the service.** From the deploy directory:
@@ -37,19 +39,29 @@ agent session with deploy approval).
    block to `/etc/nginx/sites-enabled/haliffer.ululuth.com.conf`,
    `nginx -t && systemctl reload nginx`. (No `.bak` files may remain
    inside sites-enabled.)
-6. **Install the scrape timer.** Copy `school-scrape.service` and
+6. **Register the token with the gateway auth service.** The
+   gateway's `auth_request` layer checks path-scoped tokens from
+   `/var/www/haliffer/auth/tokens.json` (sha256(token) ->
+   {"client", "paths"}). Add an entry for the SCHOOL_MCP_TOKEN:
+   client `school-mcp`, paths `["/mcp/school"]`. Caveat: the file is
+   bind-mounted into the `haliffer-auth` container as a single file —
+   an atomic-rename replace swaps the inode and the container keeps
+   reading the old one; edit in place, or restart `haliffer-auth`
+   after replacing.
+7. **Install the scrape timer.** Copy `school-scrape.service` and
    `school-scrape.timer` to `/etc/systemd/system/`,
    `systemctl daemon-reload && systemctl enable --now
    school-scrape.timer`; confirm with `systemctl list-timers`.
-7. **Smoke checks.**
+8. **Smoke checks.**
    - MCP health through the gateway: `get_source_health` via
-     `https://haliffer.ululuth.com/mcp/school/` with the bearer token
+     `https://haliffer.ululuth.com/mcp/school/` with the
+     SCHOOL_MCP_TOKEN as the Bearer
      — hac/team_site/agenda report SUCCESS with fresh finish stamps.
    - CLI health inside the container: `docker exec
      haliffer-school-mcp python -m school.app health` exits 0 and its
      evaluation reports `ok: true`.
    - One digest-input pass: `get_drivers {"student_id": "sam"}`
      returns merged records with `scraped_at` set.
-8. **Soak, then cut the digest over** per `DIGEST_V2.md`. The grades
+9. **Soak, then cut the digest over** per `DIGEST_V2.md`. The grades
    MCP (digest v1) stays up throughout; rollback is a digest-config
    change, nothing here is destructive.
