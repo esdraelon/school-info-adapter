@@ -11,14 +11,20 @@ name = "school-info-adapter"
 version = "0.1.0"
 description = "School Information Adapter: pluggable source drivers feeding normalized due-item (Driver) and material (Resource) records, exposed as an MCP on hal9k."
 requires-python = ">=3.11"
-# No runtime dependencies yet — M0 is a scaffold (see docs/DESIGN.md §5).
-dependencies = []
+# Runtime dependencies: the official MCP Python SDK (FastMCP) for the
+# M4 server, and uvicorn to serve its ASGI app (imported directly by
+# school.mcp_server.server, so declared rather than left transitive).
+dependencies = [
+    "mcp>=1.16,<2",
+    "uvicorn>=0.30",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "coverage",
     "mypy",
+    "httpx",
 ]
 
 [tool.setuptools]
