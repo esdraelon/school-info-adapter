@@ -328,3 +328,33 @@ def test_initialize_at_root_answers_without_redirect(stack: str) -> None:
         )
     assert response.status_code == 200
     assert "location" not in response.headers
+
+
+def test_gateway_host_header_is_allowed(stack: str) -> None:
+    """The gateway forwards Host: haliffer.ululuth.com ($http_host).
+
+    Regression pin for the second 2026-10-22 deploy bug: the SDK's
+    default DNS-rebinding allowlist is derived from the bind address
+    (localhost), so the public Host was 421'd. build_mcp allowlists
+    the gateway host explicitly.
+    """
+    with httpx.Client(trust_env=False, follow_redirects=False) as client:
+        response = client.post(
+            stack,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pin", "version": "0"},
+                },
+            },
+            headers={
+                "Authorization": f"Bearer {TOKEN}",
+                "Accept": "application/json, text/event-stream",
+                "Host": "haliffer.ululuth.com",
+            },
+        )
+    assert response.status_code == 200

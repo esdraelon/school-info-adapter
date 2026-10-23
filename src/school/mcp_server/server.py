@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.types import ASGIApp
 
 from school.domain import ItemStatus, ResourceKind
@@ -88,6 +89,29 @@ def build_mcp(services: QueryServices) -> FastMCP:
         # /mcp/school/ prefix, so requests arrive at / and are served
         # directly — the same shape as the other gateway MCPs.
         streamable_http_path="/",
+        # DNS-rebinding protection with an explicit allowlist. Left
+        # to its default, the SDK derives allowed hosts from the
+        # bind address — localhost only — and 421s the gateway's
+        # public Host (haliffer.ululuth.com, via $http_host) at
+        # deploy time. The gateway host is the one public name this
+        # app is ever served under; localhost entries keep direct
+        # on-host calls working.
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "haliffer.ululuth.com",
+                "haliffer.ululuth.com:*",
+                "127.0.0.1:*",
+                "localhost:*",
+                "[::1]:*",
+            ],
+            allowed_origins=[
+                "https://haliffer.ululuth.com",
+                "https://haliffer.ululuth.com:*",
+                "http://127.0.0.1:*",
+                "http://localhost:*",
+            ],
+        ),
     )
 
     @mcp.tool()
