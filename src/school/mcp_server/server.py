@@ -81,6 +81,13 @@ def build_mcp(services: QueryServices) -> FastMCP:
             "students, merged across HAC, the team site, and agenda decks."
         ),
         stateless_http=True,
+        # The endpoint lives at the app root, not the SDK's default
+        # /mcp: at the default, POST /mcp/ answers 307 -> /mcp, and a
+        # redirect is exactly what breaks behind the gateway (scheme /
+        # prefix rewriting). Gateway shape: nginx strips the public
+        # /mcp/school/ prefix, so requests arrive at / and are served
+        # directly — the same shape as the other gateway MCPs.
+        streamable_http_path="/",
     )
 
     @mcp.tool()

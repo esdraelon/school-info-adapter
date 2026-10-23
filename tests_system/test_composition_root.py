@@ -172,7 +172,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     assert server.started, "composed MCP server did not start"
     try:
         yield Stack(
-            url=f"http://127.0.0.1:{port}/mcp",
+            url=f"http://127.0.0.1:{port}/",
             scrape_code=scrape_code,
             health=health_payload,
         )

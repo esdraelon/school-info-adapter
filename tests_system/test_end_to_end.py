@@ -192,7 +192,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         time.sleep(0.01)
     assert server.started, "MCP server did not start"
     try:
-        yield f"http://127.0.0.1:{port}/mcp"
+        yield f"http://127.0.0.1:{port}/"
     finally:
         server.should_exit = True
         thread.join(timeout=10)
@@ -297,3 +297,34 @@ def test_unauthenticated_calls_are_rejected(stack: str) -> None:
     for response in (no_token, wrong_token):
         assert response.status_code == 401
         assert response.json() == {"error": "unauthorized"}
+
+
+def test_initialize_at_root_answers_without_redirect(stack: str) -> None:
+    """The gateway deploy's shape: POST / is served directly (200).
+
+    Regression pin for the 2026-10-22 deploy bug: with the endpoint
+    at the SDK default /mcp, POST /mcp/ answered 307 -> /mcp, and the
+    redirect target broke behind the TLS-terminating gateway. The
+    SDK client follows redirects, which is why only a raw,
+    non-following POST can pin this.
+    """
+    with httpx.Client(trust_env=False, follow_redirects=False) as client:
+        response = client.post(
+            stack,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pin", "version": "0"},
+                },
+            },
+            headers={
+                "Authorization": f"Bearer {TOKEN}",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+    assert response.status_code == 200
+    assert "location" not in response.headers
