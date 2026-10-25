@@ -1,0 +1,109 @@
+[
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "kind": "NOTES",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Area/Perimeter",
+    "url": "https://example.test/math/area-perimeter"
+  },
+  {
+    "course": {
+      "name": "Choir",
+      "period": "7",
+      "teacher": "Ms. Nguyen"
+    },
+    "kind": "LINK",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "student": null,
+    "title": "Choir Warmups",
+    "url": "https://example.test/choir/warmups"
+  },
+  {
+    "course": {
+      "name": "ELA",
+      "period": "2",
+      "teacher": "Ms. Ortiz"
+    },
+    "kind": "DOCUMENT",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "ELA Essay Guide",
+    "url": "https://example.test/ela/essay"
+  },
+  {
+    "course": null,
+    "kind": "LINK",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "student": null,
+    "title": "General Study Tips",
+    "url": "https://example.test/study-tips"
+  },
+  {
+    "course": null,
+    "kind": "DOCUMENT",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Math Practice Set",
+    "url": "https://example.test/math/practice"
+  },
+  {
+    "course": {
+      "name": "Science",
+      "period": "1",
+      "teacher": "Mr. Chen"
+    },
+    "kind": "DOCUMENT",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Science Lab Safety",
+    "url": "https://example.test/science/lab-safety"
+  },
+  {
+    "course": null,
+    "kind": "TUTORIAL",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "student": null,
+    "title": "Tutorial Schedule",
+    "url": "https://example.test/team/tutorials"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "kind": "NOTES",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Volume notes",
+    "url": "https://example.test/math/volume-notes"
+  }
+]

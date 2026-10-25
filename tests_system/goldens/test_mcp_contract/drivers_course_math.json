@@ -1,0 +1,59 @@
+[
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": "2026-10-26T00:00:00Z",
+    "kind": "QUIZ",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Quiz: Pythagorean Theorem",
+    "status": "DONE",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Quiz: Pythagorean Theorem"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": "2027-04-23T00:00:00Z",
+    "kind": "QUIZ",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Algebra Readiness Quiz",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Algebra Readiness Quiz"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": null,
+    "kind": "PRACTICE",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Extra Credit: Math Puzzle",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Extra Credit: Math Puzzle"
+  }
+]

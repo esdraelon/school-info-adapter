@@ -1,0 +1,34 @@
+[
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "kind": "NOTES",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Area/Perimeter",
+    "url": "https://example.test/math/area-perimeter"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "kind": "NOTES",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Volume notes",
+    "url": "https://example.test/math/volume-notes"
+  }
+]

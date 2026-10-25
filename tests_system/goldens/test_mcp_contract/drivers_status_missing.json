@@ -1,0 +1,40 @@
+[
+  {
+    "course": {
+      "name": "ELA",
+      "period": "2",
+      "teacher": "Ms. Ortiz"
+    },
+    "due_at": "2026-10-23T00:00:00Z",
+    "kind": "ASSIGNMENT",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Notebook Check #1",
+    "status": "MISSING",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Notebook Check #1"
+  },
+  {
+    "course": {
+      "name": "Science",
+      "period": "1",
+      "teacher": "Mr. Chen"
+    },
+    "due_at": "2026-10-23T00:00:00Z",
+    "kind": "TEST",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Unit 2 Assessment",
+    "status": "MISSING",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Unit 2 Assessment"
+  }
+]

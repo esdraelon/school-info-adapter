@@ -1,0 +1,21 @@
+[
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": "2026-10-25T00:00:00Z",
+    "kind": "ASSIGNMENT",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Other Student Assignment",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Other",
+      "id": "other"
+    },
+    "title": "Other Student Assignment"
+  }
+]

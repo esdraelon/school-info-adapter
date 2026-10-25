@@ -1,0 +1,31 @@
+[
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "kind": "NOTES",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Area/Perimeter",
+    "url": "https://example.test/math/area-perimeter"
+  },
+  {
+    "course": {
+      "name": "Choir",
+      "period": "7",
+      "teacher": "Ms. Nguyen"
+    },
+    "kind": "LINK",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "student": null,
+    "title": "Choir Warmups",
+    "url": "https://example.test/choir/warmups"
+  }
+]

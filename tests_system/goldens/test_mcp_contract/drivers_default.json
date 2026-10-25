@@ -1,0 +1,192 @@
+[
+  {
+    "course": {
+      "name": "Science",
+      "period": "1",
+      "teacher": "Mr. Chen"
+    },
+    "due_at": "2026-09-22T00:00:00Z",
+    "kind": "TEST",
+    "score_text": "92",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Chemistry Unit Test",
+    "status": "GRADED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Chemistry Unit Test"
+  },
+  {
+    "course": {
+      "name": "ELA",
+      "period": "2",
+      "teacher": "Ms. Ortiz"
+    },
+    "due_at": "2026-10-20T00:00:00Z",
+    "kind": "PROJECT",
+    "score_text": "87.77",
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Timeline Project",
+    "status": "GRADED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Timeline Project"
+  },
+  {
+    "course": {
+      "name": "ELA",
+      "period": "2",
+      "teacher": "Ms. Ortiz"
+    },
+    "due_at": "2026-10-23T00:00:00Z",
+    "kind": "ASSIGNMENT",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Notebook Check #1",
+    "status": "MISSING",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Notebook Check #1"
+  },
+  {
+    "course": {
+      "name": "Science",
+      "period": "1",
+      "teacher": "Mr. Chen"
+    },
+    "due_at": "2026-10-23T00:00:00Z",
+    "kind": "TEST",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "HAC",
+    "source_ref": "fixture://hac/Unit 2 Assessment",
+    "status": "MISSING",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Unit 2 Assessment"
+  },
+  {
+    "course": {
+      "name": "Choir",
+      "period": "7",
+      "teacher": "Ms. Nguyen"
+    },
+    "due_at": "2026-10-24T00:00:00Z",
+    "kind": "PRACTICE",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "source_ref": "fixture://team_site/Choir Participation 10/19-23",
+    "status": "DONE",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Choir Participation 10/19-23"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": "2026-10-26T00:00:00Z",
+    "kind": "QUIZ",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Quiz: Pythagorean Theorem",
+    "status": "DONE",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Quiz: Pythagorean Theorem"
+  },
+  {
+    "course": {
+      "name": "Wind Ensemble",
+      "period": "6",
+      "teacher": "Mr. Patel"
+    },
+    "due_at": "2026-10-26T08:00:00Z",
+    "kind": "PRACTICE",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Sectionals Week 2-5",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Sectionals Week 2-5"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": "2027-04-23T00:00:00Z",
+    "kind": "QUIZ",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Algebra Readiness Quiz",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Algebra Readiness Quiz"
+  },
+  {
+    "course": {
+      "name": "Math 8",
+      "period": "3",
+      "teacher": "Ms. Alvarez"
+    },
+    "due_at": null,
+    "kind": "PRACTICE",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "AGENDA",
+    "source_ref": "fixture://agenda/Extra Credit: Math Puzzle",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Extra Credit: Math Puzzle"
+  },
+  {
+    "course": {
+      "name": "Science",
+      "period": "1",
+      "teacher": "Mr. Chen"
+    },
+    "due_at": null,
+    "kind": "PROJECT",
+    "score_text": null,
+    "scraped_at": "2026-10-22T18:00:00Z",
+    "source_kind": "TEAM_SITE",
+    "source_ref": "fixture://team_site/Science Fair Idea",
+    "status": "ASSIGNED",
+    "student": {
+      "display_name": "Sam",
+      "id": "sam"
+    },
+    "title": "Science Fair Idea"
+  }
+]
