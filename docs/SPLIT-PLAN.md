@@ -236,7 +236,8 @@ before cutover, on a branch.
   to the split shape (dispatcher-owned docs touch — the
   assistant repo is NOT in this plan's milestones).
 - Pre-existing dependencies outside this plan (dispatcher/
-  Noah owned, NOT split milestones): birth-runbook recovery
-  (design §10.1 — needed before birth, split or no split);
+  Noah owned, NOT split milestones): birth-checkout fast-forward
+  (design §10.1 — hal9k checkout to the `stack/birth-staging` tip
+  before the birth session, split or no split);
   digest v2 query-path fix (before cutover reliance);
   digest v2 cutover itself; profile birth session.

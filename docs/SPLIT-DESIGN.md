@@ -369,8 +369,8 @@ Gateway surface is untouched by the split: same route
 pipeline composition root + CLI, pipeline Dockerfile/compose/
 timer, deck-registry format, HAC cache contract
 (read-only file, mtime-as-`scraped_at`), Classroom session/
-profile/vault docs, `deploy/BIRTH.md` (when recovered — see
-§10). Plus the interface docs (§4) as read-only ground truth.
+profile/vault docs, `deploy/BIRTH.md` (on the `stack/birth-staging` tip — see
+§10 for the checkout fast-forward note). Plus the interface docs (§4) as read-only ground truth.
 
 ### Ingestion-side agents — context EXCLUDES:
 `mcp_server/` internals, serializers, auth, gateway/nginx,
@@ -504,18 +504,14 @@ the design amended first.
 
 ## 10. Open questions (genuinely open, not decided here)
 
-1. **The birth runbook file is missing from the repo.**
-   `deploy/BIRTH.md` is referenced by
-   `deploy/Dockerfile.birth-ui` ("see deploy/BIRTH.md") and
-   was recorded as branch commit `2afb11f`, but that
-   object does not exist on hal9k and the branch tip is
-   `c090427` — the file was never pushed (or never
-   committed). The runbook's substance survives in
-   conversation context, but the repo has no runbook. It
-   must be recovered or rewritten BEFORE the birth session
-   regardless of the split — and the split plan assumes
-   the recovered runbook, not the missing file. (Not a
-   split-design question; a pre-birth dependency for the
+1. **The birth runbook is on the branch tip; the hal9k checkout is one commit behind it.**
+   `deploy/BIRTH.md` exists on hal9k at `stack/birth-staging` tip `2afb11f`
+   ("Deploy: BIRTH.md"), verified by the dispatcher 2026-10-25 — the
+   earlier "missing" reading mistook the hal9k checkout (sitting at
+   `c090427`) for the branch tip. No recovery or rewrite is needed.
+   The pre-birth step is fast-forwarding the hal9k checkout to the
+   branch tip so the runbook is on disk where the session runs.
+   (Not a split-design question; a pre-birth dependency for the
    dispatcher.)
 2. **WAL migration versioning.** §4e adds WAL as schema
    migration v2. If the pipeline sets WAL via connection
